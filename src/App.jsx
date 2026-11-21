@@ -38,6 +38,8 @@ export default function EnergySkyApp() {
   const [authMode, setAuthMode] = useState('login');
   const [loading, setLoading] = useState(true);
   const [gateway, setGateway] = useState('');
+  const [selectedPlan, setSelectedPlan] = useState(null);
+  const [buying, setBuying] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -129,13 +131,47 @@ export default function EnergySkyApp() {
     setPage('auth');
   };
 
-  const handleBuy = async (plan) => {
-    if (user.balance < plan.price) return alert('Saldo insuficiente!');
-    const { error: updateError } = await supabase.rpc('buy_plan', { user_id: user.id, plan_id: plan.id });
-    if (updateError) return alert('Erro na compra: ' + updateError.message);
+// Abre a confirmação antes de comprar
+const handleBuy = (plan) => {
+  setSelectedPlan(plan);
+};
+
+// Executa a compra somente após confirmação
+const confirmBuy = async () => {
+  if (!selectedPlan || buying) return;
+
+  if (Number(user?.balance || 0) < Number(selectedPlan.price)) {
+    alert('Saldo insuficiente!');
+    return;
+  }
+
+  setBuying(true);
+
+  try {
+    const { error } = await supabase.rpc('buy_plan', {
+      user_id: user.id,
+      plan_id: selectedPlan.id
+    });
+
+    if (error) {
+      alert('Erro na compra: ' + error.message);
+      return;
+    }
+
     await fetchUserProfile(user.id);
+
+    setSelectedPlan(null);
     setPage('my-investments');
-  };
+
+    alert('Compra realizada com sucesso! Seu ativo já está disponível.');
+
+  } catch (error) {
+    alert('Não foi possível concluir a compra.');
+    console.error(error);
+  } finally {
+    setBuying(false);
+  }
+};
 
   const handleWithdraw = async () => {
     if (user.balance < 20) return alert('Mínimo para saque: R$ 20,00');
@@ -500,7 +536,77 @@ export default function EnergySkyApp() {
           <LogOut className="w-6 h-6" /> <span className="hidden md:inline">Sair</span>
         </button>
       </nav>
-      <main className="pb-24 md:pb-0 md:pl-72">
+      {selectedPlan && (
+  <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+    <div className="w-full max-w-md bg-[#111] border border-[#333] rounded-3xl p-7 shadow-2xl">
+
+      <div className="text-center mb-6">
+        <div className="w-16 h-16 rounded-2xl bg-yellow-500/10 flex items-center justify-center mx-auto mb-4">
+          <ShoppingBag className="w-8 h-8 text-yellow-500" />
+        </div>
+
+        <h2 className="text-2xl font-black text-white">
+          Confirmar <span className="text-yellow-500">Compra</span>
+        </h2>
+
+        <p className="text-gray-500 text-sm mt-2">
+          Você deseja realmente adquirir este ativo?
+        </p>
+      </div>
+
+      <div className="bg-[#1a1a1a] rounded-2xl p-5 space-y-4 mb-6">
+
+        <div className="flex justify-between gap-3">
+          <span className="text-gray-500">Plano selecionado</span>
+          <strong className="text-white text-right">
+            {selectedPlan.name}
+          </strong>
+        </div>
+
+        <div className="flex justify-between gap-3">
+          <span className="text-gray-500">Valor da compra</span>
+          <strong className="text-yellow-500">
+            R$ {Number(selectedPlan.price).toFixed(2)}
+          </strong>
+        </div>
+
+        <div className="flex justify-between gap-3">
+          <span className="text-gray-500">Saldo disponível</span>
+          <strong className="text-white">
+            R$ {Number(user?.balance || 0).toFixed(2)}
+          </strong>
+        </div>
+
+        <div className="border-t border-[#333] pt-4">
+          <p className="text-gray-400 text-xs leading-relaxed">
+            Ao confirmar, você autoriza a compra deste ativo
+            utilizando o saldo disponível na sua conta.
+          </p>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-3">
+
+        <button
+          onClick={confirmBuy}
+          disabled={buying}
+          className="w-full bg-yellow-500 hover:bg-yellow-400 disabled:opacity-50 text-black font-black py-4 rounded-xl transition-all"
+        >
+          {buying ? 'Processando compra...' : 'CONFIRMAR COMPRA'}
+        </button>
+
+        <button
+          onClick={() => setSelectedPlan(null)}
+          disabled={buying}
+          className="w-full bg-[#222] hover:bg-[#333] text-white font-bold py-4 rounded-xl transition-all disabled:opacity-50"
+        >
+          CANCELAR
+        </button>
+
+      </div>
+    </div>
+  </div>
+)}<main className="pb-24 md:pb-0 md:pl-72">
         {page === 'dashboard' && <Dashboard />}
         {page === 'shop' && <Shop />}
         {page === 'my-investments' && <MyInvestments />}
