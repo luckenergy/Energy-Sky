@@ -80,19 +80,43 @@ export default function EnergySkyApp() {
     setUser(data);
   }
 
-  const handleAuth = async (e) => {
+ const handleAuth = async (e) => {
     e.preventDefault();
     const formData = new FormData(e.target);
     const email = formData.get('email') || formData.get('login');
     const password = formData.get('password');
 
-     {
+    if (authMode === 'register') {
       const name = formData.get('name');
       const phone = formData.get('phone');
-      const { data, error } = await supabase.auth.signUp({ email, password });
+
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            full_name: name,
+            phone: phone
+          }
+        }
+      });
+
       if (error) return alert(error.message);
+
       if (data.user) {
-        await supabase.from('profiles').insert([{ id: data.user.id, name, phone, balance: 0 }]);
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .upsert({
+            id: data.user.id,
+            full_name: name,
+            phone: phone,
+            email: email
+          })
+          .select()
+          .single();
+
+        setUser(profileData);
+        setPage('dashboard');
       }
     } else {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
