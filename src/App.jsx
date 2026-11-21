@@ -516,3 +516,405 @@ function NavItem({ icon, label, active, onClick }) {
     </button>
   );
 }
+
+function ProfileScreen({ user, session }) {
+  const [investments, setInvestments] = useState([]);
+  const [transactions, setTransactions] = useState([]);
+  const [withdrawals, setWithdrawals] = useState([]);
+  const [deposits, setDeposits] = useState([]);
+  const [filter, setFilter] = useState('all');
+  const [loadingProfile, setLoadingProfile] = useState(true);
+  const [errorMessage, setErrorMessage] = useState('');
+
+  const userId = session?.user?.id;
+
+  const money = (value) =>
+    Number(value || 0).toLocaleString('pt-BR', {
+      style: 'currency',
+      currency: 'BRL'
+    });
+
+  const dateFormat = (value) =>
+    value
+      ? new Date(value).toLocaleString('pt-BR')
+      : 'Data não disponível';
+
+  const completedStatuses = [
+    'approved',
+    'completed',
+    'paid',
+    'success',
+    'processed'
+  ];
+
+  const statusLabel = (status) => {
+    const labels = {
+      approved: 'Aprovado',
+      completed: 'Concluído',
+      paid: 'Pago',
+      success: 'Concluído',
+      processed: 'Processado',
+      pending: 'Pendente',
+      active: 'Ativo',
+      rejected: 'Rejeitado',
+      cancelled: 'Cancelado',
+      canceled: 'Cancelado',
+      failed: 'Falhou'
+    };
+
+    return labels[String(status || '').toLowerCase()] || status || 'Não informado';
+  };
+
+  useEffect(() => {
+    if (!userId) return;
+
+    let cancelled = false;
+
+    async function loadProfileData() {
+      setLoadingProfile(true);
+      setErrorMessage('');
+
+      const [
+        investmentsResult,
+        transactionsResult,
+        withdrawalsResult,
+        depositsResult
+      ] = await Promise.all([
+        supabase
+          .from('investments')
+          .select('id, amount, status, created_at')
+          .eq('user_id', userId),
+
+        supabase
+          .from('transactions')
+          .select('id, type, amount, status, description, reference, created_at')
+          .eq('user_id', userId),
+
+        supabase
+          .from('withdrawal_requests')
+          .select('id, amount, status, created_at')
+          .eq('user_id', userId),
+
+        supabase
+          .from('deposit_requests')
+          .select('id, amount, status, created_at')
+          .eq('user_id', userId)
+      ]);
+
+      if (cancelled) return;
+
+      if (investmentsResult.error || transactionsResult.error) {
+        console.error(
+          'Erro ao carregar histórico:',
+          investmentsResult.error || transactionsResult.error
+        );
+        setErrorMessage(
+          'Não foi possível carregar todos os dados financeiros. Verifique as permissões do Supabase.'
+        );
+      }
+
+      setInvestments(investmentsResult.data || []);
+      setTransactions(transactionsResult.data || []);
+      setWithdrawals(withdrawalsResult.data || []);
+      setDeposits(depositsResult.data || []);
+
+      setLoadingProfile(false);
+    }
+
+    loadProfileData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+
+  // Soma somente investimentos ativos.
+  const totalInvested = investments
+    .filter(item => item.status === 'active')
+    .reduce((total, item) => total + Number(item.amount || 0), 0);
+
+  // Considera somente saques com status reconhecido como concluído.
+  const completedWithdrawals = withdrawals.filter(item =>
+    completedStatuses.includes(
+      String(item.status || '').toLowerCase()
+    )
+  );
+
+  const totalWithdrawn = completedWithdrawals.reduce(
+    (total, item) => total + Number(item.amount || 0),
+    0
+  );
+
+  // O histórico utiliza as solicitações e transações existentes.
+  // Não adicionamos investments aqui para evitar duplicar compras
+  // que já aparecem na tabela transactions.
+  const history = [
+    ...transactions.map(item => ({
+      ...item,
+      category: 'transaction',
+      title: item.description || (
+        item.type === 'purchase'
+          ? 'Compra de investimento'
+          : item.type === 'withdraw'
+            ? 'Saque'
+            : item.type === 'deposit'
+              ? 'Depósito'
+              : item.type
+      )
+    })),
+
+    ...withdrawals.map(item => ({
+      ...item,
+      type: 'withdraw',
+      category: 'withdrawal',
+      title: 'Solicitação de saque'
+    })),
+
+    ...deposits.map(item => ({
+      ...item,
+      type: 'deposit',
+      category: 'deposit',
+      title: 'Solicitação de depósito'
+    }))
+  ].sort(
+    (a, b) =>
+      new Date(b.created_at).getTime() -
+      new Date(a.created_at).getTime()
+  );
+
+  const filteredHistory = history.filter(item => {
+    if (filter === 'all') return true;
+    return item.type === filter;
+  });
+
+  const profileName =
+    user?.full_name ||
+    session?.user?.user_metadata?.full_name ||
+    'Cliente';
+
+  const profileEmail = session?.user?.email || user?.email || 'Não informado';
+
+  const profilePhone =
+    user?.phone ||
+    session?.user?.user_metadata?.phone ||
+    'Não informado';
+
+  return (
+    <div className="p-5 md:p-8 max-w-6xl mx-auto space-y-8 pb-32">
+
+      <div>
+        <h2 className="text-3xl font-black text-white">
+          Meu <span className="text-yellow-500">Perfil</span>
+        </h2>
+        <p className="text-gray-500 mt-2">
+          Consulte seus dados e seu histórico financeiro.
+        </p>
+      </div>
+
+      {/* DADOS PESSOAIS */}
+      <div className="bg-[#111] border border-[#222] rounded-3xl p-6 space-y-5">
+
+        <div className="flex items-center gap-4">
+          <div className="w-16 h-16 rounded-2xl bg-yellow-500/10 flex items-center justify-center">
+            <Users className="w-8 h-8 text-yellow-500" />
+          </div>
+
+          <div>
+            <h3 className="text-xl font-bold text-white">
+              {profileName}
+            </h3>
+            <p className="text-gray-500 text-sm">
+              Dados da sua conta
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+
+          <div className="bg-[#1a1a1a] rounded-2xl p-4">
+            <p className="text-gray-500 text-xs mb-2">NOME COMPLETO</p>
+            <p className="text-white font-semibold break-words">
+              {profileName}
+            </p>
+          </div>
+
+          <div className="bg-[#1a1a1a] rounded-2xl p-4">
+            <p className="text-gray-500 text-xs mb-2">E-MAIL</p>
+            <p className="text-white font-semibold break-all">
+              {profileEmail}
+            </p>
+          </div>
+
+          <div className="bg-[#1a1a1a] rounded-2xl p-4">
+            <p className="text-gray-500 text-xs mb-2">TELEFONE</p>
+            <p className="text-white font-semibold">
+              {profilePhone}
+            </p>
+          </div>
+
+        </div>
+
+        <div className="flex items-center gap-2 text-green-400 text-xs">
+          <ShieldCheck className="w-4 h-4" />
+          Informações somente para visualização
+        </div>
+      </div>
+
+      {/* RESUMO FINANCEIRO */}
+      <div>
+        <h3 className="text-xl font-bold text-white mb-4">
+          Resumo financeiro
+        </h3>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+          <div className="bg-[#111] border border-[#222] rounded-3xl p-6">
+            <div className="flex items-center justify-between">
+              <p className="text-gray-500 text-sm">Total investido ativo</p>
+              <TrendingUp className="text-green-400" />
+            </div>
+
+            <h3 className="text-3xl font-black text-green-400 mt-3">
+              {money(totalInvested)}
+            </h3>
+
+            <p className="text-gray-600 text-xs mt-2">
+              Soma dos investimentos com status ativo.
+            </p>
+          </div>
+
+          <div className="bg-[#111] border border-[#222] rounded-3xl p-6">
+            <div className="flex items-center justify-between">
+              <p className="text-gray-500 text-sm">Total sacado concluído</p>
+              <Wallet className="text-yellow-500" />
+            </div>
+
+            <h3 className="text-3xl font-black text-white mt-3">
+              {money(totalWithdrawn)}
+            </h3>
+
+            <p className="text-gray-600 text-xs mt-2">
+              Somente solicitações com status reconhecido como concluído.
+            </p>
+          </div>
+
+        </div>
+      </div>
+
+      {/* HISTÓRICO */}
+      <div className="bg-[#111] border border-[#222] rounded-3xl overflow-hidden">
+
+        <div className="p-6 border-b border-[#222]">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+
+            <div>
+              <h3 className="text-xl font-bold text-white">
+                Histórico financeiro
+              </h3>
+              <p className="text-gray-500 text-sm mt-1">
+                Suas movimentações registradas no sistema.
+              </p>
+            </div>
+
+            <select
+              value={filter}
+              onChange={e => setFilter(e.target.value)}
+              className="bg-[#1a1a1a] border border-[#333] text-white rounded-xl p-3 outline-none"
+            >
+              <option value="all">Todas as movimentações</option>
+              <option value="purchase">Investimentos</option>
+              <option value="deposit">Depósitos</option>
+              <option value="withdraw">Saques</option>
+            </select>
+
+          </div>
+        </div>
+
+        {loadingProfile ? (
+          <div className="p-12 flex justify-center">
+            <Loader2 className="w-8 h-8 text-yellow-500 animate-spin" />
+          </div>
+        ) : errorMessage ? (
+          <div className="p-6 text-center text-yellow-500">
+            {errorMessage}
+          </div>
+        ) : filteredHistory.length === 0 ? (
+          <div className="p-12 text-center text-gray-500">
+            Nenhuma movimentação encontrada.
+          </div>
+        ) : (
+
+          <div className="divide-y divide-[#222]">
+
+            {filteredHistory.map((item, index) => {
+              const isWithdraw = item.type === 'withdraw';
+              const isDeposit = item.type === 'deposit';
+              const amount = Number(item.amount || 0);
+
+              return (
+                <div
+                  key={`${item.category}-${item.id}`}
+                  className="p-5 flex items-center justify-between gap-3 hover:bg-[#1a1a1a] transition-colors"
+                >
+
+                  <div className="flex items-center gap-3 min-w-0">
+
+                    <div className={`w-11 h-11 shrink-0 rounded-xl flex items-center justify-center ${
+                      isWithdraw
+                        ? 'bg-red-500/10 text-red-400'
+                        : isDeposit
+                          ? 'bg-green-500/10 text-green-400'
+                          : 'bg-yellow-500/10 text-yellow-500'
+                    }`}>
+                      {isWithdraw ? (
+                        <Wallet className="w-5 h-5" />
+                      ) : isDeposit ? (
+                        <PlusCircle className="w-5 h-5" />
+                      ) : (
+                        <TrendingUp className="w-5 h-5" />
+                      )}
+                    </div>
+
+                    <div className="min-w-0">
+                      <p className="text-white font-bold truncate">
+                        {item.title}
+                      </p>
+                      <p className="text-gray-500 text-xs mt-1">
+                        {dateFormat(item.created_at)}
+                      </p>
+                      <p className="text-gray-500 text-xs">
+                        {statusLabel(item.status)}
+                      </p>
+                    </div>
+
+                  </div>
+
+                  <div className="text-right shrink-0">
+                    <p className={`font-bold ${
+                      isWithdraw
+                        ? 'text-red-400'
+                        : isDeposit
+                          ? 'text-green-400'
+                          : 'text-white'
+                    }`}>
+                      {isWithdraw ? '-' : isDeposit ? '+' : ''}
+                      {money(amount)}
+                    </p>
+                  </div>
+
+                </div>
+              );
+            })}
+
+          </div>
+        )}
+
+      </div>
+
+      <p className="text-gray-600 text-xs text-center">
+        Os dados são carregados diretamente do seu cadastro no Skynet Energy.
+      </p>
+
+    </div>
+  );
+}
