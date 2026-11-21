@@ -133,6 +133,7 @@ export default function EnergySkyApp() {
 
 // Abre a confirmação antes de comprar
 const handleBuy = (plan) => {
+  console.log('Plano selecionado:', plan);
   setSelectedPlan(plan);
 };
 
@@ -383,7 +384,10 @@ const confirmBuy = async () => {
                 <span className="text-gray-500">Preço: <b className="text-white">R$ {plan.price}</b></span>
                 <span className="text-gray-500">Rende: <b className="text-green-400">R$ {plan.yield}/dia</b></span>
               </div>
-              <button onClick={() => handleBuy(plan)} className="w-full bg-white text-black font-bold py-3 rounded-xl hover:bg-yellow-500 transition-colors active:scale-95">
+              <button
+                onClick={() => handleBuy(plan)}
+                className="w-full bg-white text-black font-bold py-3 rounded-xl hover:bg-yellow-500 transition-colors active:scale-95"
+                >
                 Comprar Ativo
               </button>
             </div>
