@@ -80,7 +80,7 @@ export default function EnergySkyApp() {
     setUser(data);
   }
 
- const handleAuth = async (e) => {
+  const handleAuth = async (e) => {
     e.preventDefault();
     const formData = new FormData(e.target);
     const email = formData.get('email') || formData.get('login');
@@ -128,36 +128,7 @@ export default function EnergySkyApp() {
     await supabase.auth.signOut();
     setPage('auth');
   };
- if (authMode === 'register') {
-      const name = formData.get('name');
-      const phone = formData.get('phone');
 
-      // Envia o nome e telefone junto com o cadastro no Auth
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            full_name: name,
-            phone: phone
-          }
-        }
-      });
-      
-      if (error) return alert(error.message);
-
-      if (data.user) {
-        // Busca o perfil já preenchido pelo gatilho do banco
-        const { data: profileData } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', data.user.id)
-          .single();
-
-        setUser(profileData);
-        setPage('dashboard');
-      }
-    }
   const handleBuy = async (plan) => {
     if (user.balance < plan.price) return alert('Saldo insuficiente!');
     const { error: updateError } = await supabase.rpc('buy_plan', { user_id: user.id, plan_id: plan.id });
