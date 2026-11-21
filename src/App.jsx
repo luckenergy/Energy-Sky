@@ -489,6 +489,12 @@ export default function EnergySkyApp() {
         <NavItem icon={<ShoppingBag />} label="Investir" active={page === 'shop'} onClick={() => setPage('shop')} />
         <NavItem icon={<TrendingUp />} label="Meus Ativos" active={page === 'my-investments'} onClick={() => setPage('my-investments')} />
         <NavItem icon={<Wallet />} label="Carteira" active={page === 'wallet'} onClick={() => setPage('wallet')} />
+        <NavItem
+  icon={<Users />}
+  label="Meu Perfil"
+  active={page === 'profile'}
+  onClick={() => setPage('profile')}
+/>
         {user?.isAdmin && <NavItem icon={<Settings />} label="Admin" active={page === 'admin'} onClick={() => setPage('admin')} />}
         <button onClick={handleLogout} className="flex items-center gap-3 text-red-500 font-bold p-3 rounded-2xl hover:bg-red-500/10 transition-all">
           <LogOut className="w-6 h-6" /> <span className="hidden md:inline">Sair</span>
@@ -500,6 +506,9 @@ export default function EnergySkyApp() {
         {page === 'my-investments' && <MyInvestments />}
         {page === 'wallet' && <WalletScreen />}
         {page === 'admin' && <AdminScreen />}
+        {page === 'profile' && (
+  <ProfileScreen user={user} session={session} />
+)}
       </main>
     </div>
   );
@@ -540,7 +549,6 @@ function ProfileScreen({ user, session }) {
       : 'Data não disponível';
 
   const completedStatuses = [
-    'approved',
     'completed',
     'paid',
     'success',
