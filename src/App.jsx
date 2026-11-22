@@ -896,7 +896,6 @@ export default function EnergySkyApp() {
         <NavItem icon={<TrendingUp />} label="Meus Ativos" active={page === 'my-investments'} onClick={() => setPage('my-investments')} />
         <NavItem icon={<Wallet />} label="Carteira" active={page === 'wallet'} onClick={() => setPage('wallet')} />
         <NavItem icon={<Users />} label="Meu Perfil" active={page === 'profile'} onClick={() => setPage('profile')} />
-        
         <NavItem
          icon={<Users />}
          label="Indicações"
