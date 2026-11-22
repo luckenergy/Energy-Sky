@@ -615,7 +615,7 @@ const confirmBuy = async () => {
         {page === 'dashboard' && <Dashboard />}
         {page === 'shop' && <Shop />}
         {page === 'my-investments' && <MyInvestments />}
-        {page === 'wallet' && <WalletScreen()}
+        {page === 'wallet' && WalletScreen()}
         {page === 'admin' && <AdminScreen />}
         {page === 'profile' && (
   <ProfileScreen user={user} session={session} />
