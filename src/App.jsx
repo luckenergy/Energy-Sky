@@ -600,6 +600,7 @@ export default function EnergySkyApp() {
   const [authMode, setAuthMode] = useState('login');
   const [loading, setLoading] = useState(true);
   const [gateway, setGateway] = useState('');
+  const [communityLink, setCommunityLink] = useState('');
   const [selectedPlan, setSelectedPlan] = useState(null);
   const [buying, setBuying] = useState(false);
   const [referralCode, setReferralCode] = useState('');
@@ -646,6 +647,15 @@ export default function EnergySkyApp() {
       setPlans(plansWithImages);
       const { data: config } = await supabase.from('config').select('value').eq('key', 'pix_gateway').single();
       if (config) setGateway(config.value);
+      const { data: communityConfig } = await supabase
+      .from('config')
+      .select('value')
+      .eq('key', 'community_link')
+      .maybeSingle();
+
+      if (communityConfig?.value) {
+      setCommunityLink(communityConfig.value);
+      }
     }
     loadAppData();
   }, []);
@@ -1000,6 +1010,18 @@ export default function EnergySkyApp() {
         {page === 'referrals' && (<ReferralScreen user={user} setUser={setUser} />)}
 
       </main>
+      {communityLink && (
+       <a
+        href={communityLink}
+        target="_blank"
+        rel="noopener noreferrer"
+        title="Entre no nosso grupo"
+        className="fixed bottom-24 right-5 md:bottom-8 md:right-8 z-[90] flex items-center gap-3 bg-green-500 hover:bg-green-400 text-black font-black px-5 py-4 rounded-full shadow-2xl hover:scale-105 transition-all"
+        >
+        <Users className="w-6 h-6" />
+        <span>ENTRAR NO GRUPO</span>
+      </a>
+     )}
     </div>
   );
 }
