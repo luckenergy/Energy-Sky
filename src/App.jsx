@@ -23,8 +23,8 @@ import {
 } from 'lucide-react';
 
 // --- CONFIGURAÇÃO SUPABASE ---
-const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || '';
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 const FALLBACK_PLANS_IMAGES = {
@@ -48,6 +48,176 @@ function NavItem({ icon, label, active, onClick }) {
   );
 }
 
+function ProfileScreen({ user, session }) {
+  const [investments, setInvestments] = useState([]);
+  const [transactions, setTransactions] = useState([]);
+  const [withdrawals, setWithdrawals] = useState([]);
+  const [deposits, setDeposits] = useState([]);
+  const [filter, setFilter] = useState('all');
+  const [loadingProfile, setLoadingProfile] = useState(true);
+  const [errorMessage, setErrorMessage] = useState('');
+
+  const userId = session?.user?.id;
+
+  const money = (value) =>
+    Number(value || 0).toLocaleString('pt-BR', {
+      style: 'currency',
+      currency: 'BRL'
+    });
+
+  const dateFormat = (value) =>
+    value
+      ? new Date(value).toLocaleString('pt-BR')
+      : 'Data não disponível';
+
+  const completedStatuses = ['completed', 'paid', 'success', 'processed'];
+
+  const statusLabel = (status) => {
+    const labels = {
+      approved: 'Aprovado',
+      completed: 'Concluído',
+      paid: 'Pago',
+      success: 'Concluído',
+      processed: 'Processado',
+      pending: 'Pendente',
+      active: 'Ativo',
+      rejected: 'Rejeitado',
+      cancelled: 'Cancelado',
+      canceled: 'Cancelado',
+      failed: 'Falhou'
+    };
+    return labels[String(status || '').toLowerCase()] || status || 'Não informado';
+  };
+
+  useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+    async function loadProfileData() {
+      setLoadingProfile(true);
+      setErrorMessage('');
+      const [invRes, transRes, withRes, depRes] = await Promise.all([
+        supabase.from('investments').select('id, amount, status, created_at').eq('user_id', userId),
+        supabase.from('transactions').select('id, type, amount, status, description, reference, created_at').eq('user_id', userId),
+        supabase.from('withdrawal_requests').select('id, amount, status, created_at').eq('user_id', userId),
+        supabase.from('deposit_requests').select('id, amount, status, created_at').eq('user_id', userId)
+      ]);
+      if (cancelled) return;
+      if (invRes.error || transRes.error) setErrorMessage('Erro ao carregar dados financeiros.');
+      setInvestments(invRes.data || []);
+      setTransactions(transRes.data || []);
+      setWithdrawals(withRes.data || []);
+      setDeposits(depRes.data || []);
+      setLoadingProfile(false);
+    }
+    loadProfileData();
+    return () => { cancelled = true; };
+  }, [userId]);
+
+  const totalInvested = investments.filter(item => item.status === 'active').reduce((t, i) => t + Number(i.amount || 0), 0);
+  const totalWithdrawn = withdrawals.filter(item => completedStatuses.includes(String(item.status || '').toLowerCase())).reduce((t, i) => t + Number(i.amount || 0), 0);
+
+  const history = [
+    ...transactions.map(item => ({ ...item, category: 'transaction', title: item.description || (item.type === 'purchase' ? 'Compra de investimento' : item.type === 'withdraw' ? 'Saque' : item.type === 'deposit' ? 'Depósito' : item.type) })),
+    ...withdrawals.map(item => ({ ...item, type: 'withdraw', category: 'withdrawal', title: 'Solicitação de saque' })),
+    ...deposits.map(item => ({ ...item, type: 'deposit', category: 'deposit', title: 'Solicitação de depósito' }))
+  ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+  const filteredHistory = history.filter(item => filter === 'all' || item.type === filter);
+
+  return (
+    <div className="p-5 md:p-8 max-w-6xl mx-auto space-y-8 pb-32">
+      <div>
+        <h2 className="text-3xl font-black text-white">Meu <span className="text-yellow-500">Perfil</span></h2>
+        <p className="text-gray-500 mt-2">Consulte seus dados e seu histórico financeiro.</p>
+      </div>
+      <div className="bg-[#111] border border-[#222] rounded-3xl p-6 space-y-5">
+        <div className="flex items-center gap-4">
+          <div className="w-16 h-16 rounded-2xl bg-yellow-500/10 flex items-center justify-center">
+            <Users className="w-8 h-8 text-yellow-500" />
+          </div>
+          <div>
+            <h3 className="text-xl font-bold text-white">{user?.full_name || 'Cliente'}</h3>
+            <p className="text-gray-500 text-sm">Dados da sua conta</p>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-[#1a1a1a] rounded-2xl p-4">
+            <p className="text-gray-500 text-xs mb-2">NOME COMPLETO</p>
+            <p className="text-white font-semibold">{user?.full_name || 'Não informado'}</p>
+          </div>
+          <div className="bg-[#1a1a1a] rounded-2xl p-4">
+            <p className="text-gray-500 text-xs mb-2">E-MAIL</p>
+            <p className="text-white font-semibold">{user?.email || 'Não informado'}</p>
+          </div>
+          <div className="bg-[#1a1a1a] rounded-2xl p-4">
+            <p className="text-gray-500 text-xs mb-2">TELEFONE</p>
+            <p className="text-white font-semibold">{user?.phone || 'Não informado'}</p>
+          </div>
+          <div className="bg-[#1a1a1a] rounded-2xl p-4 border border-yellow-500/20">
+            <p className="text-yellow-500 text-xs mb-2 font-bold">CPF (IMUTÁVEL)</p>
+            <p className="text-white font-bold">{user?.cpf || 'Não informado'}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 text-green-400 text-xs">
+          <ShieldCheck className="w-4 h-4" />
+          Informações de segurança verificadas e imutáveis.
+        </div>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="bg-[#111] border border-[#222] rounded-3xl p-6">
+          <div className="flex items-center justify-between">
+            <p className="text-gray-500 text-sm">Total investido ativo</p>
+            <TrendingUp className="text-green-400" />
+          </div>
+          <h3 className="text-3xl font-black text-green-400 mt-3">{money(totalInvested)}</h3>
+        </div>
+        <div className="bg-[#111] border border-[#222] rounded-3xl p-6">
+          <div className="flex items-center justify-between">
+            <p className="text-gray-500 text-sm">Total sacado concluído</p>
+            <Wallet className="text-yellow-500" />
+          </div>
+          <h3 className="text-3xl font-black text-white mt-3">{money(totalWithdrawn)}</h3>
+        </div>
+      </div>
+      <div className="bg-[#111] border border-[#222] rounded-3xl overflow-hidden">
+        <div className="p-6 border-b border-[#222] flex flex-col md:flex-row justify-between gap-4">
+          <h3 className="text-xl font-bold text-white">Histórico financeiro</h3>
+          <select value={filter} onChange={e => setFilter(e.target.value)} className="bg-[#1a1a1a] border border-[#333] text-white rounded-xl p-3 outline-none">
+            <option value="all">Todas as movimentações</option>
+            <option value="purchase">Investimentos</option>
+            <option value="deposit">Depósitos</option>
+            <option value="withdraw">Saques</option>
+          </select>
+        </div>
+        {loadingProfile ? (
+          <div className="p-12 flex justify-center"><Loader2 className="w-8 h-8 text-yellow-500 animate-spin" /></div>
+        ) : filteredHistory.length === 0 ? (
+          <div className="p-12 text-center text-gray-500">Nenhuma movimentação encontrada.</div>
+        ) : (
+          <div className="divide-y divide-[#222]">
+            {filteredHistory.map((item, index) => (
+              <div key={index} className="p-5 flex items-center justify-between hover:bg-[#1a1a1a] transition-colors">
+                <div className="flex items-center gap-3">
+                  <div className={`w-11 h-11 rounded-xl flex items-center justify-center ${item.type === 'withdraw' ? 'bg-red-500/10 text-red-400' : item.type === 'deposit' ? 'bg-green-500/10 text-green-400' : 'bg-yellow-500/10 text-yellow-500'}`}>
+                    {item.type === 'withdraw' ? <Wallet className="w-5 h-5" /> : item.type === 'deposit' ? <PlusCircle className="w-5 h-5" /> : <TrendingUp className="w-5 h-5" />}
+                  </div>
+                  <div>
+                    <p className="text-white font-bold">{item.title}</p>
+                    <p className="text-gray-500 text-xs">{dateFormat(item.created_at)} • {statusLabel(item.status)}</p>
+                  </div>
+                </div>
+                <p className={`font-bold ${item.type === 'withdraw' ? 'text-red-400' : item.type === 'deposit' ? 'text-green-400' : 'text-white'}`}>
+                  {item.type === 'withdraw' ? '-' : item.type === 'deposit' ? '+' : ''}{money(item.amount)}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function EnergySkyApp() {
   const [page, setPage] = useState('auth'); 
   const [user, setUser] = useState(null); 
@@ -66,7 +236,6 @@ export default function EnergySkyApp() {
       else setPage('auth');
       setLoading(false);
     });
-
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       if (session) {
@@ -77,7 +246,6 @@ export default function EnergySkyApp() {
         setPage('auth');
       }
     });
-
     return () => subscription.unsubscribe();
   }, []);
 
@@ -105,41 +273,17 @@ export default function EnergySkyApp() {
     const formData = new FormData(e.target);
     const email = formData.get('email') || formData.get('login');
     const password = formData.get('password');
-
     if (authMode === 'register') {
       const name = formData.get('name');
       const phone = formData.get('phone');
       const cpf = formData.get('cpf');
-
-      if (!cpf) return alert('O CPF é obrigatório para cadastro!');
-
+      if (!cpf) return alert('O CPF é obrigatório!');
       const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            full_name: name,
-            phone: phone,
-            cpf: cpf
-          }
-        }
+        email, password, options: { data: { full_name: name, phone: phone, cpf: cpf } }
       });
-
       if (error) return alert(error.message);
-
       if (data.user) {
-        const { data: profileData } = await supabase
-          .from('profiles')
-          .upsert({
-            id: data.user.id,
-            full_name: name,
-            phone: phone,
-            email: email,
-            cpf: cpf
-          })
-          .select()
-          .single();
-
+        const { data: profileData } = await supabase.from('profiles').upsert({ id: data.user.id, full_name: name, phone: phone, email: email, cpf: cpf }).select().single();
         setUser(profileData);
         setPage('dashboard');
       }
@@ -154,77 +298,39 @@ export default function EnergySkyApp() {
     setPage('auth');
   };
 
-  const handleBuy = (plan) => {
-    setSelectedPlan(plan);
-  };
+  const handleBuy = (plan) => setSelectedPlan(plan);
 
   const confirmBuy = async () => {
     if (!selectedPlan || buying) return;
-    if (Number(user?.balance || 0) < Number(selectedPlan.price)) {
-      alert('Saldo insuficiente!');
-      return;
-    }
+    if (Number(user?.balance || 0) < Number(selectedPlan.price)) return alert('Saldo insuficiente!');
     setBuying(true);
     try {
-      const { error } = await supabase.rpc('buy_plan', {
-        user_id: user.id,
-        plan_id: selectedPlan.id
-      });
-      if (error) {
-        alert('Erro na compra: ' + error.message);
-        return;
-      }
+      const { error } = await supabase.rpc('buy_plan', { user_id: user.id, plan_id: selectedPlan.id });
+      if (error) throw error;
       await fetchUserProfile(user.id);
       setSelectedPlan(null);
       setPage('my-investments');
       alert('Compra realizada com sucesso!');
-    } catch (error) {
-      alert('Não foi possível concluir a compra.');
-    } finally {
-      setBuying(false);
-    }
+    } catch (e) { alert('Erro na compra: ' + e.message); } finally { setBuying(false); }
   };
 
   const handleWithdraw = async () => {
     if (user.balance < 20) return alert('Mínimo para saque: R$ 20,00');
     if (!user.pixKey) return alert('Configure sua chave PIX primeiro!');
-    
-    // TRAVA DE SEGURANÇA: A chave PIX deve ser exatamente o CPF cadastrado
-    if (user.pixKey !== user.cpf) {
-      return alert('ERRO DE SEGURANÇA: O saque só é permitido para a chave PIX correspondente ao CPF cadastrado na conta.');
-    }
-
-    const { error } = await supabase.from('transactions').insert([{ 
-      user_id: user.id, 
-      type: 'withdraw', 
-      amount: user.balance, 
-      status: 'pending', 
-      pix_key: user.pixKey 
-    }]);
-    
+    if (user.pixKey !== user.cpf) return alert('ERRO DE SEGURANÇA: A chave PIX deve ser o CPF cadastrado.');
+    const { error } = await supabase.from('transactions').insert([{ user_id: user.id, type: 'withdraw', amount: user.balance, status: 'pending', pix_key: user.pixKey }]);
     if (error) return alert('Erro ao solicitar saque');
     await supabase.rpc('request_withdraw', { user_id: user.id });
     await fetchUserProfile(user.id);
-    alert('Solicitação de saque enviada com sucesso!');
+    alert('Solicitação de saque enviada!');
   };
 
   const MyInvestments = () => {
     const [myAssets, setMyAssets] = useState([]);
-
     useEffect(() => {
       async function loadAssets() {
-        const { data, error } = await supabase
-          .from('investments')
-          .select('*')
-          .eq('user_id', user.id);
-
-        if (error) console.error('Erro ao carregar ativos:', error);
-
-        const ativosComPlanos = (data || []).map(asset => ({
-          ...asset,
-          plans: plans.find(p => p.id === asset.plan_id) || {}
-        }));
-
+        const { data, error } = await supabase.from('investments').select('*').eq('user_id', user.id);
+        const ativosComPlanos = (data || []).map(asset => ({ ...asset, plans: plans.find(p => p.id === asset.plan_id) || {} }));
         setMyAssets(ativosComPlanos);
       }
       if (user?.id) loadAssets();
@@ -234,48 +340,29 @@ export default function EnergySkyApp() {
       const { error } = await supabase.rpc('claim_asset_earnings', { investment_id: assetId });
       if (error) return alert('Erro ao coletar: ' + error.message);
       await fetchUserProfile(user.id);
-      alert('Lucros deste ativo coletados!');
+      alert('Lucros coletados!');
     };
 
     const AssetTimer = ({ asset }) => {
       const [timeLeft, setTimeLeft] = useState({ h: 0, m: 0, s: 0, percent: 100 });
-
       useEffect(() => {
         const interval = setInterval(() => {
           const lastClaim = asset.last_claim ? new Date(asset.last_claim).getTime() : Date.now();
           const nextClaim = lastClaim + 86400000;
           const diff = nextClaim - Date.now();
-
-          if (diff <= 0) {
-            setTimeLeft({ h: 0, m: 0, s: 0, percent: 0 });
-          } else {
-            setTimeLeft({
-              h: Math.floor(diff / 3600000),
-              m: Math.floor((diff % 3600000) / 60000),
-              s: Math.floor((diff % 60000) / 1000),
-              percent: (diff / 86400000) * 100
-            });
-          }
+          if (diff <= 0) setTimeLeft({ h: 0, m: 0, s: 0, percent: 0 });
+          else setTimeLeft({ h: Math.floor(diff / 3600000), m: Math.floor((diff % 3600000) / 60000), s: Math.floor((diff % 60000) / 1000), percent: (diff / 86400000) * 100 });
         }, 1000);
         return () => clearInterval(interval);
       }, [asset]);
-
       return (
         <div className="flex flex-col items-center gap-2">
           <div className="relative w-12 h-12">
             <svg className="w-full h-full" viewBox="0 0 36 36">
               <circle cx="18" cy="18" r="16" fill="none" stroke="#222" strokeWidth="3" />
-              <circle 
-                cx="18" cy="18" r="16" fill="none" stroke="#eab308" 
-                strokeWidth="3" strokeDasharray="100" 
-                strokeDashoffset={100 - timeLeft.percent} 
-                strokeLinecap="round" 
-                className="transition-all duration-1000"
-              />
+              <circle cx="18" cy="18" r="16" fill="none" stroke="#eab308" strokeWidth="3" strokeDasharray="100" strokeDashoffset={100 - timeLeft.percent} strokeLinecap="round" className="transition-all duration-1000" />
             </svg>
-            <div className="absolute inset-0 flex items-center justify-center text-[8px] font-bold">
-              {timeLeft.h}h
-            </div>
+            <div className="absolute inset-0 flex items-center justify-center text-[8px] font-bold">{timeLeft.h}h</div>
           </div>
           <p className="text-[10px] font-mono text-gray-400">{timeLeft.m}m {timeLeft.s}s</p>
         </div>
@@ -286,35 +373,20 @@ export default function EnergySkyApp() {
       <div className="p-6 max-w-5xl mx-auto space-y-8">
         <div className="grid gap-4">
           <h3 className="text-xl font-bold text-white">Meus Ativos <span className="text-yellow-500">Individuais</span></h3>
-          {myAssets.length === 0 ? (
-            <div className="p-12 text-center bg-[#111] border border-dashed border-[#333] rounded-3xl text-gray-500">
-              Nenhum ativo adquirido ainda.
-            </div>
-          ) : (
+          {myAssets.length === 0 ? (<div className="p-12 text-center bg-[#111] border border-dashed border-[#333] rounded-3xl text-gray-500">Nenhum ativo adquirido.</div>) : (
             myAssets.map((asset, i) => (
               <div key={i} className="bg-[#111] p-5 rounded-3xl border border-[#222] flex items-center justify-between hover:border-yellow-500/50 transition-all">
                 <div className="flex items-center gap-4">
-                  <img 
-                    src={asset.plans?.img || FALLBACK_PLANS_IMAGES[asset.plans?.name] || 'https://via.placeholder.com/400'} 
-                    className="w-16 h-16 rounded-2xl object-cover" 
-                    alt={asset.plans?.name}
-                  />
+                  <img src={asset.plans?.img || FALLBACK_PLANS_IMAGES[asset.plans?.name] || 'https://via.placeholder.com/400'} className="w-16 h-16 rounded-2xl object-cover" alt="" />
                   <div>
                     <p className="text-white font-bold text-lg">{asset.plans?.name}</p>
                     <p className="text-gray-500 text-xs">Investimento: R$ {asset.plans?.price}</p>
                     <p className="text-green-400 font-bold text-sm">+ R$ {asset.plans?.yield}/dia</p>
                   </div>
                 </div>
-                
                 <div className="flex items-center gap-6">
                   <AssetTimer asset={asset} />
-                  <button 
-                    onClick={() => claimEarnings(asset.id)}
-                    disabled={asset.last_claim && (new Date(asset.last_claim).getTime() + 86400000 > Date.now())}
-                    className="bg-yellow-500 text-black px-4 py-2 rounded-xl font-bold text-xs hover:bg-yellow-400 transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    Sacar Lucro
-                  </button>
+                  <button onClick={() => claimEarnings(asset.id)} disabled={asset.last_claim && (new Date(asset.last_claim).getTime() + 86400000 > Date.now())} className="bg-yellow-500 text-black px-4 py-2 rounded-xl font-bold text-xs hover:bg-yellow-400 disabled:opacity-40">Sacar Lucro</button>
                 </div>
               </div>
             ))
@@ -328,9 +400,7 @@ export default function EnergySkyApp() {
     <div className="min-h-screen flex items-center justify-center bg-[#0a0a0a] text-white p-4">
       <div className="w-full max-w-md bg-[#111] border border-[#222] p-8 rounded-3xl shadow-2xl">
         <div className="text-center mb-8">
-          <div className="inline-flex p-3 bg-yellow-500/10 rounded-full mb-4">
-            <ShieldCheck className="text-yellow-500 w-8 h-8" />
-          </div>
+          <div className="inline-flex p-3 bg-yellow-500/10 rounded-full mb-4"><ShieldCheck className="text-yellow-500 w-8 h-8" /></div>
           <h1 className="text-3xl font-black tracking-tighter">SKYNET <span className="text-yellow-500">ENERGY</span></h1>
           <p className="text-gray-500 mt-2">{authMode === 'login' ? 'Acesse sua conta' : 'Crie sua conta'}</p>
         </div>
@@ -343,17 +413,11 @@ export default function EnergySkyApp() {
               <input name="phone" placeholder="Telefone" required className="w-full bg-[#1a1a1a] border border-[#333] p-3 rounded-xl outline-none focus:border-yellow-500 transition-all" />
             </>
           )}
-          {authMode === 'login' && (
-            <input name="login" type="email" placeholder="E-mail" required className="w-full bg-[#1a1a1a] border border-[#333] p-3 rounded-xl outline-none focus:border-yellow-500 transition-all" />
-          )}
+          {authMode === 'login' && (<input name="login" type="email" placeholder="E-mail" required className="w-full bg-[#1a1a1a] border border-[#333] p-3 rounded-xl outline-none focus:border-yellow-500 transition-all" />)}
           <input name="password" type="password" placeholder="Senha" required className="w-full bg-[#1a1a1a] border border-[#333] p-3 rounded-xl outline-none focus:border-yellow-500 transition-all" />
-          <button className="w-full bg-yellow-500 hover:bg-yellow-600 text-black font-bold p-3 rounded-xl transition-all active:scale-95">
-            {authMode === 'login' ? 'Entrar' : 'Cadastrar'}
-          </button>
+          <button className="w-full bg-yellow-500 hover:bg-yellow-600 text-black font-bold p-3 rounded-xl transition-all">{authMode === 'login' ? 'Entrar' : 'Cadastrar'}</button>
         </form>
-        <button onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')} className="w-full text-center mt-6 text-gray-500 text-sm hover:text-yellow-500 transition-colors">
-          {authMode === 'login' ? 'Não tem conta? Cadastre-se' : 'Já tem conta? Faça login'}
-        </button>
+        <button onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')} className="w-full text-center mt-6 text-gray-500 text-sm hover:text-yellow-500 transition-colors">{authMode === 'login' ? 'Não tem conta? Cadastre-se' : 'Já tem conta? Faça login'}</button>
       </div>
     </div>
   );
@@ -361,37 +425,22 @@ export default function EnergySkyApp() {
   const Dashboard = () => (
     <div className="p-6 max-w-5xl mx-auto space-y-8">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-[#111] p-6 rounded-3xl border border-[#222] hover:border-yellow-500/30 transition-all">
-          <p className="text-gray-500 text-sm font-medium">Saldo Disponível</p>
-          <h2 className="text-3xl font-bold text-white">R$ {user?.balance?.toFixed(2) || '0.00'}</h2>
-        </div>
-        <div className="bg-[#111] p-6 rounded-3xl border border-[#222] hover:border-yellow-500/30 transition-all">
-          <p className="text-gray-500 text-sm font-medium">Rendimentos Pendentes</p>
-          <h2 className="text-3xl font-bold text-yellow-500">R$ {user?.pending_earnings?.toFixed(4) || '0.0000'}</h2>
-        </div>
-        <div className="bg-[#111] p-6 rounded-3xl border border-[#222] hover:border-yellow-500/30 transition-all">
-          <p className="text-gray-500 text-sm font-medium">Total Sacado</p>
-          <h2 className="text-3xl font-bold text-white">R$ {user?.total_withdrawn?.toFixed(2) || '0.00'}</h2>
-        </div>
+        <div className="bg-[#111] p-6 rounded-3xl border border-[#222]"><p className="text-gray-500 text-sm">Saldo Disponível</p><h2 className="text-3xl font-bold text-white">R$ {user?.balance?.toFixed(2) || '0.00'}</h2></div>
+        <div className="bg-[#111] p-6 rounded-3xl border border-[#222]"><p className="text-gray-500 text-sm">Rendimentos Pendentes</p><h2 className="text-3xl font-bold text-yellow-500">R$ {user?.pending_earnings?.toFixed(4) || '0.0000'}</h2></div>
+        <div className="bg-[#111] p-6 rounded-3xl border border-[#222]"><p className="text-gray-500 text-sm">Total Sacado</p><h2 className="text-3xl font-bold text-white">R$ {user?.total_withdrawn?.toFixed(2) || '0.00'}</h2></div>
       </div>
-
-      <div className="bg-yellow-500 p-8 rounded-3xl text-black flex flex-col md:flex-row justify-between items-center gap-4 shadow-xl shadow-yellow-500/10">
+      <div className="bg-yellow-500 p-8 rounded-3xl text-black flex flex-col md:flex-row justify-between items-center gap-4">
         <div className="text-center md:text-left">
           <h3 className="text-2xl font-black uppercase italic">Olá, {user?.full_name || 'Investidor'}!</h3>
           <p className="font-medium opacity-80">Seu império energético está crescendo.</p>
         </div>
-        <button onClick={() => setPage('shop')} className="bg-black text-white px-6 py-3 rounded-2xl font-bold hover:scale-105 transition-transform active:scale-95">
-          Investir Agora
-        </button>
+        <button onClick={() => setPage('shop')} className="bg-black text-white px-6 py-3 rounded-2xl font-bold hover:scale-105 transition-transform">Investir Agora</button>
       </div>
-
-      {/* SEÇÃO INVESTIMENTOS CHINA - PERSUASIVA */}
       <div className="space-y-6">
         <div className="text-center space-y-2">
           <h2 className="text-3xl font-black text-white uppercase tracking-tighter">Expansão <span className="text-yellow-500">Asiática</span></h2>
           <p className="text-gray-400 max-w-2xl mx-auto">Invista na maior potência energética do mundo. A China lidera a revolução verde com a tecnologia mais avançada do planeta.</p>
         </div>
-
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {[
             { title: 'Micro Geradores', desc: 'Sistemas compactos de alta eficiência para redes urbanas densas.', icon: <Cpu />, img: 'https://images.pexels.com/photos/37226176/pexels-photo-37226176.jpeg?auto=compress&cs=tinysrgb&w=600' },
@@ -401,12 +450,10 @@ export default function EnergySkyApp() {
             { title: 'Complexos Industriais', desc: 'Centros de produção automatizados com energia autossustentável.', icon: <Factory />, img: 'https://images.pexels.com/photos/36756675/pexels-photo-36756675.jpeg?auto=compress&cs=tinysrgb&w=600' },
             { title: 'Centrais Nucleares', desc: 'Energia limpa e constante com reatores de 4ª geração.', icon: <Globe />, img: 'https://images.pexels.com/photos/18335700/pexels-photo-18335700.jpeg?auto=compress&cs=tinysrgb&w=600' },
           ].map((item, idx) => (
-            <div key={idx} className="group bg-[#111] border border-[#222] rounded-3xl overflow-hidden hover:border-yellow-500 transition-all duration-300">
+            <div key={idx} className="group bg-[#111] border border-[#222] rounded-3xl overflow-hidden hover:border-yellow-500 transition-all">
               <div className="relative h-40 overflow-hidden">
-                <img src={item.img} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" alt={item.title} />
-                <div className="absolute top-3 left-3 p-2 bg-black/50 backdrop-blur-md rounded-lg text-yellow-500">
-                  {item.icon}
-                </div>
+                <img src={item.img} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" alt="" />
+                <div className="absolute top-3 left-3 p-2 bg-black/50 backdrop-blur-md rounded-lg text-yellow-500">{item.icon}</div>
               </div>
               <div className="p-5 space-y-2">
                 <h4 className="text-lg font-bold text-white">{item.title}</h4>
@@ -415,15 +462,10 @@ export default function EnergySkyApp() {
             </div>
           ))}
         </div>
-
         <div className="bg-gradient-to-r from-yellow-600 to-yellow-400 p-8 rounded-3xl text-black text-center space-y-4">
           <h3 className="text-2xl font-black uppercase">Por que investir na China?</h3>
-          <p className="font-medium opacity-90 max-w-3xl mx-auto">
-            A China detém 80% da cadeia de suprimentos de energia solar e eólica do mundo. Investir aqui não é apenas sobre ecologia, é sobre <b>lucratividade agressiva</b> e domínio tecnológico. Não fique de fora da maior transferência de riqueza energética da história.
-          </p>
-          <button onClick={() => setPage('shop')} className="bg-black text-white px-8 py-4 rounded-2xl font-black hover:scale-105 transition-transform active:scale-95 uppercase tracking-widest">
-            Quero Lucrar Agora
-          </button>
+          <p className="font-medium opacity-90 max-w-3xl mx-auto">A China detém 80% da cadeia de suprimentos de energia solar e eólica do mundo. Investir aqui é sobre <b className="font-black">lucratividade agressiva</b> e domínio tecnológico.</p>
+          <button onClick={() => setPage('shop')} className="bg-black text-white px-8 py-4 rounded-2xl font-black hover:scale-105 transition-transform uppercase tracking-widest">Quero Lucrar Agora</button>
         </div>
       </div>
     </div>
@@ -433,18 +475,14 @@ export default function EnergySkyApp() {
     <div className="p-6 max-w-6xl mx-auto">
       <div className="flex justify-between items-center mb-8">
         <h2 className="text-3xl font-bold text-white">Catálogo de <span className="text-yellow-500">Ativos</span></h2>
-        <div className="bg-[#111] px-4 py-2 rounded-xl border border-[#222] text-white font-bold">
-          Saldo: R$ {user?.balance?.toFixed(2)}
-        </div>
+        <div className="bg-[#111] px-4 py-2 rounded-xl border border-[#222] text-white font-bold">Saldo: R$ {user?.balance?.toFixed(2)}</div>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {plans.map(plan => (
-          <div key={plan.id} className="bg-[#111] rounded-3xl border border-[#222] overflow-hidden group hover:border-yellow-500 transition-all duration-300">
+          <div key={plan.id} className="bg-[#111] rounded-3xl border border-[#222] overflow-hidden group hover:border-yellow-500 transition-all">
             <div className="relative overflow-hidden">
-              <img src={plan.img} className="w-full h-48 object-cover group-hover:scale-110 transition-transform duration-500" />
-              <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-md px-3 py-1 rounded-full text-xs font-bold text-yellow-500 border border-yellow-500/30">
-                Ativo Ativo
-              </div>
+              <img src={plan.img} className="w-full h-48 object-cover group-hover:scale-110 transition-transform duration-500" alt="" />
+              <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-md px-3 py-1 rounded-full text-xs font-bold text-yellow-500 border border-yellow-500/30">Ativo Ativo</div>
             </div>
             <div className="p-6 space-y-4">
               <h3 className="text-xl font-bold text-white">{plan.name}</h3>
@@ -452,12 +490,7 @@ export default function EnergySkyApp() {
                 <span className="text-gray-500">Preço: <b className="text-white">R$ {plan.price}</b></span>
                 <span className="text-gray-500">Rende: <b className="text-green-400">R$ {plan.yield}/dia</b></span>
               </div>
-              <button
-                onClick={() => handleBuy(plan)}
-                className="w-full bg-white text-black font-bold py-3 rounded-xl hover:bg-yellow-500 transition-colors active:scale-95"
-                >
-                Comprar Ativo
-              </button>
+              <button onClick={() => handleBuy(plan)} className="w-full bg-white text-black font-bold py-3 rounded-xl hover:bg-yellow-500 transition-colors">Comprar Ativo</button>
             </div>
           </div>
         ))}
@@ -476,32 +509,21 @@ export default function EnergySkyApp() {
           <div className="space-y-4">
             <label className="text-gray-500 text-sm font-medium">Chave PIX (Deve ser seu CPF)</label>
             <div className="flex gap-2">
-              <input 
-                defaultValue={user?.pixKey || ''} 
-                onChange={async (e) => {
-                  const newPix = e.target.value;
-                  setUser({ ...user, pixKey: newPix });
-                  await supabase.from('profiles').update({ pixKey: newPix }).eq('id', user.id);
-                }}
-                placeholder="Digite seu CPF" 
-                className="flex-1 bg-[#1a1a1a] border border-[#333] p-3 rounded-xl text-white outline-none focus:border-yellow-500 transition-all" 
-                />
+              <input defaultValue={user?.pixKey || ''} onChange={async (e) => { const newPix = e.target.value; setUser({ ...user, pixKey: newPix }); await supabase.from('profiles').update({ pixKey: newPix }).eq('id', user.id); }} placeholder="Digite seu CPF" className="flex-1 bg-[#1a1a1a] border border-[#333] p-3 rounded-xl text-white outline-none focus:border-yellow-500 transition-all" />
             </div>
           </div>
           <div className="space-y-4">
             <label className="text-gray-500 text-sm font-medium">Depositar Valor</label>
             <div className="flex gap-2">
               <input id="dep-val" type="number" placeholder="R$ 0,00" className="flex-1 bg-[#1a1a1a] border border-[#333] p-3 rounded-xl text-white outline-none focus:border-yellow-500 transition-all" />
-              <button onClick={() => alert('Funcionalidade de depósito via gateway em implementação')} className="bg-white text-black px-4 rounded-xl font-bold hover:bg-yellow-500 transition-colors">OK</button>
+              <button onClick={() => alert('Em implementação')} className="bg-white text-black px-4 rounded-xl font-bold hover:bg-yellow-500 transition-colors">OK</button>
             </div>
           </div>
         </div>
         <div className="pt-8 border-t border-[#222] text-center space-y-4">
           <p className="text-gray-500">Saldo para Saque</p>
           <h3 className="text-5xl font-black text-white">R$ {user?.balance?.toFixed(2)}</h3>
-          <button onClick={handleWithdraw} className="w-full max-w-xs bg-yellow-500 text-black font-black py-4 rounded-2xl hover:bg-yellow-600 transition-all uppercase tracking-widest active:scale-95">
-            Solicitar Saque PIX
-          </button>
+          <button onClick={handleWithdraw} className="w-full max-w-xs bg-yellow-500 text-black font-black py-4 rounded-2xl hover:bg-yellow-600 transition-all uppercase tracking-widest">Solicitar Saque PIX</button>
         </div>
       </div>
     </div>
@@ -510,64 +532,35 @@ export default function EnergySkyApp() {
   const AdminScreen = () => {
     const [adminPlans, setAdminPlans] = useState([]);
     const [totalInvested, setTotalInvested] = useState(0);
-
     useEffect(() => {
       async function loadAdminData() {
         const { data: plansData } = await supabase.from('plans').select('*');
         setAdminPlans(plansData || []);
         const { data: invData } = await supabase.from('investments').select('plans(price)');
-        const total = invData?.reduce((acc, curr) => acc + Number(curr.plans?.price || 0), 0) || 0;
-        setTotalInvested(total);
+        setTotalInvested(invData?.reduce((acc, curr) => acc + Number(curr.plans?.price || 0), 0) || 0);
       }
       loadAdminData();
     }, []);
-
     const updatePlan = async (id, field, value) => {
-      const { error } = await supabase.from('plans').update({ [field]: value }).eq('id', id);
-      if (error) return alert('Erro ao atualizar');
-      await loadAdminData();
+      await supabase.from('plans').update({ [field]: value }).eq('id', id);
+      await supabase.from('plans').select('*').then(res => setAdminPlans(res.data || []));
     };
-
     return (
       <div className="p-6 max-w-6xl mx-auto space-y-8">
         <h2 className="text-3xl font-bold text-white">Painel <span className="text-yellow-500">Administrador</span></h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="bg-[#111] p-6 rounded-3xl border border-[#222]">
-            <p className="text-gray-500 text-sm">Total Investido por Usuários</p>
-            <h3 className="text-4xl font-black text-white">R$ {totalInvested.toFixed(2)}</h3>
-          </div>
-          <div className="bg-[#111] p-6 rounded-3xl border border-[#222]">
-            <p className="text-gray-500 text-sm">Status do Sistema</p>
-            <h3 className="text-4xl font-black text-green-500">Operacional</h3>
-          </div>
+          <div className="bg-[#111] p-6 rounded-3xl border border-[#222]"><p className="text-gray-500 text-sm">Total Investido</p><h3 className="text-4xl font-black text-white">R$ {totalInvested.toFixed(2)}</h3></div>
+          <div className="bg-[#111] p-6 rounded-3xl border border-[#222]"><p className="text-gray-500 text-sm">Status</p><h3 className="text-4xl font-black text-green-500">Operacional</h3></div>
         </div>
         <div className="bg-[#111] rounded-3xl border border-[#222] overflow-hidden">
           <table className="w-full text-left text-sm">
-            <thead className="bg-[#1a1a1a] text-gray-400">
-              <tr>
-                <th className="p-4">Ativo</th>
-                <th className="p-4">Preço (R$)</th>
-                <th className="p-4">Rendimento/Dia (R$)</th>
-              </tr>
-            </thead>
+            <thead className="bg-[#1a1a1a] text-gray-400"><tr><th className="p-4">Ativo</th><th className="p-4">Preço</th><th className="p-4">Rendimento</th></tr></thead>
             <tbody>
               {adminPlans.map(plan => (
                 <tr key={plan.id} className="border-t border-[#222]">
-                  <td className="p-4 text-white font-medium">{plan.name}</td>
-                  <td className="p-4">
-                    <input 
-                      className="bg-[#0a0a0a] border border-[#333] p-1 rounded text-white w-24"
-                      value={plan.price}
-                      onChange={(e) => updatePlan(plan.id, 'price', Number(e.target.value))}
-                    />
-                  </td>
-                  <td className="p-4">
-                    <input 
-                      className="bg-[#0a0a0a] border border-[#333] p-1 rounded text-white w-24"
-                      value={plan.yield}
-                      onChange={(e) => updatePlan(plan.id, 'yield', Number(e.target.value))}
-                    />
-                  </td>
+                  <td className="p-4 text-white">{plan.name}</td>
+                  <td className="p-4"><input className="bg-black border border-gray-700 p-1 rounded text-white w-20" value={plan.price} onChange={(e) => updatePlan(plan.id, 'price', Number(e.target.value))} /></td>
+                  <td className="p-4"><input className="bg-black border border-gray-700 p-1 rounded text-white w-20" value={plan.yield} onChange={(e) => updatePlan(plan.id, 'yield', Number(e.target.value))} /></td>
                 </tr>
               ))}
             </tbody>
@@ -577,235 +570,13 @@ export default function EnergySkyApp() {
     );
   };
 
-  const ProfileScreen = ({ user, session }) => {
-    const [investments, setInvestments] = useState([]);
-    const [transactions, setTransactions] = useState([]);
-    const [withdrawals, setWithdrawals] = useState([]);
-    const [deposits, setDeposits] = useState([]);
-    const [filter, setFilter] = useState('all');
-    const [loadingProfile, setLoadingProfile] = useState(true);
-    const [errorMessage, setErrorMessage] = useState('');
-
-    const userId = session?.user?.id;
-
-    const money = (value) =>
-      Number(value || 0).toLocaleString('pt-BR', {
-        style: 'currency',
-        currency: 'BRL'
-      });
-
-    const dateFormat = (value) =>
-      value
-        ? new Date(value).toLocaleString('pt-BR')
-        : 'Data não disponível';
-
-    const completedStatuses = ['completed', 'paid', 'success', 'processed'];
-
-    const statusLabel = (status) => {
-      const labels = {
-        approved: 'Aprovado',
-        completed: 'Concluído',
-        paid: 'Pago',
-        success: 'Concluído',
-        processed: 'Processado',
-        pending: 'Pendente',
-        active: 'Ativo',
-        rejected: 'Rejeitado',
-        cancelled: 'Cancelado',
-        canceled: 'Cancelado',
-        failed: 'Falhou'
-      };
-      return labels[String(status || '').toLowerCase()] || status || 'Não informado';
-    };
-
-    useEffect(() => {
-      if (!userId) return;
-      let cancelled = false;
-
-      async function loadProfileData() {
-        setLoadingProfile(true);
-        setErrorMessage('');
-
-        const [
-          investmentsResult,
-          transactionsResult,
-          withdrawalsResult,
-          depositsResult
-        ] = await Promise.all([
-          supabase.from('investments').select('id, amount, status, created_at').eq('user_id', userId),
-          supabase.from('transactions').select('id, type, amount, status, description, reference, created_at').eq('user_id', userId),
-          supabase.from('withdrawal_requests').select('id, amount, status, created_at').eq('user_id', userId),
-          supabase.from('deposit_requests').select('id, amount, status, created_at').eq('user_id', userId)
-        ]);
-
-        if (cancelled) return;
-
-        if (investmentsResult.error || transactionsResult.error) {
-          setErrorMessage('Erro ao carregar dados financeiros.');
-        }
-
-        setInvestments(investmentsResult.data || []);
-        setTransactions(transactionsResult.data || []);
-        setWithdrawals(withdrawalsResult.data || []);
-        setDeposits(depositsResult.data || []);
-        setLoadingProfile(false);
-      }
-
-      loadProfileData();
-      return () => { cancelled = true; };
-    }, [userId]);
-
-    const totalInvested = investments
-      .filter(item => item.status === 'active')
-      .reduce((total, item) => total + Number(item.amount || 0), 0);
-
-    const completedWithdrawals = withdrawals.filter(item =>
-      completedStatuses.includes(String(item.status || '').toLowerCase())
-    );
-
-    const totalWithdrawn = completedWithdrawals.reduce(
-      (total, item) => total + Number(item.amount || 0),
-      0
-    );
-
-    const history = [
-      ...transactions.map(item => ({
-        ...item,
-        category: 'transaction',
-        title: item.description || (
-          item.type === 'purchase' ? 'Compra de investimento' : 
-          item.type === 'withdraw' ? 'Saque' : 
-          item.type === 'deposit' ? 'Depósito' : item.type
-        )
-      })),
-      ...withdrawals.map(item => ({
-        ...item,
-        type: 'withdraw',
-        category: 'withdrawal',
-        title: 'Solicitação de saque'
-      })),
-      ...deposits.map(item => ({
-        ...item,
-        type: 'deposit',
-        category: 'deposit',
-        title: 'Solicitação de depósito'
-      }))
-    ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-
-    const filteredHistory = history.filter(item => filter === 'all' || item.type === filter);
-
-    return (
-      <div className="p-5 md:p-8 max-w-6xl mx-auto space-y-8 pb-32">
-        <div>
-          <h2 className="text-3xl font-black text-white">Meu <span className="text-yellow-500">Perfil</span></h2>
-          <p className="text-gray-500 mt-2">Consulte seus dados e seu histórico financeiro.</p>
-        </div>
-
-        <div className="bg-[#111] border border-[#222] rounded-3xl p-6 space-y-5">
-          <div className="flex items-center gap-4">
-            <div className="w-16 h-16 rounded-2xl bg-yellow-500/10 flex items-center justify-center">
-              <Users className="w-8 h-8 text-yellow-500" />
-            </div>
-            <div>
-              <h3 className="text-xl font-bold text-white">{user?.full_name || 'Cliente'}</h3>
-              <p className="text-gray-500 text-sm">Dados da sua conta</p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-[#1a1a1a] rounded-2xl p-4">
-              <p className="text-gray-500 text-xs mb-2">NOME COMPLETO</p>
-              <p className="text-white font-semibold">{user?.full_name || 'Não informado'}</p>
-            </div>
-            <div className="bg-[#1a1a1a] rounded-2xl p-4">
-              <p className="text-gray-500 text-xs mb-2">E-MAIL</p>
-              <p className="text-white font-semibold">{user?.email || 'Não informado'}</p>
-            </div>
-            <div className="bg-[#1a1a1a] rounded-2xl p-4">
-              <p className="text-gray-500 text-xs mb-2">TELEFONE</p>
-              <p className="text-white font-semibold">{user?.phone || 'Não informado'}</p>
-            </div>
-            <div className="bg-[#1a1a1a] rounded-2xl p-4 border border-yellow-500/20">
-              <p className="text-yellow-500 text-xs mb-2 font-bold">CPF (IMUTÁVEL)</p>
-              <p className="text-white font-bold">{user?.cpf || 'Não informado'}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 text-green-400 text-xs">
-            <ShieldCheck className="w-4 h-4" />
-            Informações de segurança verificadas e imutáveis.
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="bg-[#111] border border-[#222] rounded-3xl p-6">
-            <div className="flex items-center justify-between">
-              <p className="text-gray-500 text-sm">Total investido ativo</p>
-              <TrendingUp className="text-green-400" />
-            </div>
-            <h3 className="text-3xl font-black text-green-400 mt-3">{money(totalInvested)}</h3>
-          </div>
-          <div className="bg-[#111] border border-[#222] rounded-3xl p-6">
-            <div className="flex items-center justify-between">
-              <p className="text-gray-500 text-sm">Total sacado concluído</p>
-              <Wallet className="text-yellow-500" />
-            </div>
-            <h3 className="text-3xl font-black text-white mt-3">{money(totalWithdrawn)}</h3>
-          </div>
-        </div>
-
-        <div className="bg-[#111] border border-[#222] rounded-3xl overflow-hidden">
-          <div className="p-6 border-b border-[#222] flex flex-col md:flex-row justify-between gap-4">
-            <h3 className="text-xl font-bold text-white">Histórico financeiro</h3>
-            <select value={filter} onChange={e => setFilter(e.target.value)} className="bg-[#1a1a1a] border border-[#333] text-white rounded-xl p-3 outline-none">
-              <option value="all">Todas as movimentações</option>
-              <option value="purchase">Investimentos</option>
-              <option value="deposit">Depósitos</option>
-              <option value="withdraw">Saques</option>
-            </select>
-          </div>
-          {loadingProfile ? (
-            <div className="p-12 flex justify-center"><Loader2 className="w-8 h-8 text-yellow-500 animate-spin" /></div>
-          ) : filteredHistory.length === 0 ? (
-            <div className="p-12 text-center text-gray-500">Nenhuma movimentação encontrada.</div>
-          ) : (
-            <div className="divide-y divide-[#222]">
-              {filteredHistory.map((item, index) => (
-                <div key={index} className="p-5 flex items-center justify-between hover:bg-[#1a1a1a] transition-colors">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-11 h-11 rounded-xl flex items-center justify-center ${item.type === 'withdraw' ? 'bg-red-500/10 text-red-400' : item.type === 'deposit' ? 'bg-green-500/10 text-green-400' : 'bg-yellow-500/10 text-yellow-500'}`}>
-                      {item.type === 'withdraw' ? <Wallet className="w-5 h-5" /> : item.type === 'deposit' ? <PlusCircle className="w-5 h-5" /> : <TrendingUp className="w-5 h-5" />}
-                    </div>
-                    <div>
-                      <p className="text-white font-bold">{item.title}</p>
-                      <p className="text-gray-500 text-xs">{dateFormat(item.created_at)} • {statusLabel(item.status)}</p>
-                    </div>
-                  </div>
-                  <p className={`font-bold ${item.type === 'withdraw' ? 'text-red-400' : item.type === 'deposit' ? 'text-green-400' : 'text-white'}`}>
-                    {item.type === 'withdraw' ? '-' : item.type === 'deposit' ? '+' : ''}{money(item.amount)}
-                  </p>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  if (loading) return (
-    <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
-      <Loader2 className="w-10 h-10 text-yellow-500 animate-spin" />
-    </div>
-  );
-
+  if (loading) return (<div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center"><Loader2 className="w-10 h-10 text-yellow-500 animate-spin" /></div>);
   if (page === 'auth') return <AuthScreen />;
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white font-sans">
       <nav className="fixed bottom-0 left-0 right-0 bg-[#111] border-t border-[#222] p-4 flex justify-around items-center z-40 md:top-0 md:left-0 md:w-64 md:h-full md:flex-col md:justify-start md:gap-8 md:pt-12">
-        <div className="hidden md:block text-center mb-8">
-          <h1 className="text-2xl font-black tracking-tighter">ENERGY <span className="text-yellow-500">SKY</span></h1>
-        </div>
+        <div className="hidden md:block text-center mb-8"><h1 className="text-2xl font-black tracking-tighter">ENERGY <span className="text-yellow-500">SKY</span></h1></div>
         <NavItem icon={<LayoutDashboard />} label="Home" active={page === 'dashboard'} onClick={() => setPage('dashboard')} />
         <NavItem icon={<ShoppingBag />} label="Investir" active={page === 'shop'} onClick={() => setPage('shop')} />
         <NavItem icon={<TrendingUp />} label="Meus Ativos" active={page === 'my-investments'} onClick={() => setPage('my-investments')} />
@@ -816,14 +587,11 @@ export default function EnergySkyApp() {
           <LogOut className="w-6 h-6" /> <span className="hidden md:inline">Sair</span>
         </button>
       </nav>
-
       {selectedPlan && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
           <div className="w-full max-w-md bg-[#111] border border-[#333] rounded-3xl p-7 shadow-2xl">
             <div className="text-center mb-6">
-              <div className="w-16 h-16 rounded-2xl bg-yellow-500/10 flex items-center justify-center mx-auto mb-4">
-                <ShoppingBag className="w-8 h-8 text-yellow-500" />
-              </div>
+              <div className="w-16 h-16 rounded-2xl bg-yellow-500/10 flex items-center justify-center mx-auto mb-4"><ShoppingBag className="w-8 h-8 text-yellow-500" /></div>
               <h2 className="text-2xl font-black text-white">Confirmar <span className="text-yellow-500">Compra</span></h2>
             </div>
             <div className="bg-[#1a1a1a] rounded-2xl p-5 space-y-4 mb-6">
@@ -831,15 +599,12 @@ export default function EnergySkyApp() {
               <div className="flex justify-between"><span className="text-gray-500">Valor</span><strong className="text-yellow-500">R$ {Number(selectedPlan.price).toFixed(2)}</strong></div>
             </div>
             <div className="flex flex-col gap-3">
-              <button onClick={confirmBuy} disabled={buying} className="w-full bg-yellow-500 hover:bg-yellow-400 text-black font-black py-4 rounded-xl transition-all">
-                {buying ? 'Processando...' : 'CONFIRMAR COMPRA'}
-              </button>
+              <button onClick={confirmBuy} disabled={buying} className="w-full bg-yellow-500 hover:bg-yellow-400 text-black font-black py-4 rounded-xl transition-all">{buying ? 'Processando...' : 'CONFIRMAR COMPRA'}</button>
               <button onClick={() => setSelectedPlan(null)} className="w-full bg-[#222] text-white font-bold py-4 rounded-xl">CANCELAR</button>
             </div>
           </div>
         </div>
       )}
-
       <main className="pb-24 md:pb-0 md:pl-64">
         {page === 'dashboard' && <Dashboard />}
         {page === 'shop' && <Shop />}
