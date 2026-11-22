@@ -647,17 +647,19 @@ const WalletScreen = ({ user, setUser, handleWithdraw }) => {
     setPixPayment(null);
 
     try {
-      const { data, error } = await supabase.functions.invoke(
-        'create-misticpay-pix',
-        {
-          body: {
-            amount,
-            payerName: user?.full_name || 'Cliente Skynet Energy',
-            payerDocument: cleanCpf,
-            description: `Deposito usuario ${user.id}`,
-          },
-        }
-      );
+      const res = await fetch('/api/create-pix', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount,
+          payerName: user?.full_name || 'Cliente Skynet Energy',
+          payerDocument: cleanCpf,
+          description: `Deposito usuario ${user.id}`,
+        }),
+      });
+
+      const data = await res.json();
+      const error = !res.ok ? new Error(data?.error || 'Erro ao conectar na API') : null;
 
       if (error) throw error;
 
@@ -678,7 +680,7 @@ const WalletScreen = ({ user, setUser, handleWithdraw }) => {
       }
 
       // Mostra o PIX gerado
-      setPixPayment(pixData);
+      setPixPayment({ ...pixData, amount });
       setDepositAmount('');
 
       // Registra a solicitação no banco
@@ -688,7 +690,7 @@ const WalletScreen = ({ user, setUser, handleWithdraw }) => {
           user_id: user.id,
           amount,
           provider_reference: String(
-            pixData.transactionId || pixData.transaction_id || ''
+            pixData.transactionId || pixData.transaction_id || pixData.id || pixData.reference || ''
           ),
           status: 'pending',
           pix_copy_paste: pixData.copyPaste || null,
@@ -1156,77 +1158,248 @@ export default function EnergySkyApp() {
     }
   };
 
-  const MyInvestments = () => {
-    const [myAssets, setMyAssets] = useState([]);
-    useEffect(() => {
-      async function loadAssets() {
-        const { data, error } = await supabase.from('investments').select('*').eq('user_id', user.id);
-        const ativosComPlanos = (data || []).map(asset => ({ ...asset, plans: plans.find(p => p.id === asset.plan_id) || {} }));
-        setMyAssets(ativosComPlanos);
-      }
-      if (user?.id) loadAssets();
-    }, [user?.id, plans]);
+const MyInvestments = () => {
+  const [myAssets, setMyAssets] = useState([]);
+  const [loadingAssets, setLoadingAssets] = useState(true);
+  const [assetsError, setAssetsError] = useState("");
+  const [claimingId, setClaimingId] = useState(null);
 
-    const claimEarnings = async (assetId) => {
-      const { error } = await supabase.rpc('claim_asset_earnings', { investment_id: assetId });
-      if (error) return alert('Erro ao coletar: ' + error.message);
-      await fetchUserProfile(user.id);
-      alert('Lucros coletados!');
-    };
+  const loadAssets = async () => {
+    if (!user?.id) {
+      setMyAssets([]);
+      setLoadingAssets(false);
+      return;
+    }
 
-    const AssetTimer = ({ asset }) => {
-      const [timeLeft, setTimeLeft] = useState({ h: 0, m: 0, s: 0, percent: 100 });
-      useEffect(() => {
-        const interval = setInterval(() => {
-          const lastClaim = asset.last_claim ? new Date(asset.last_claim).getTime() : Date.now();
-          const nextClaim = lastClaim + 86400000;
-          const diff = nextClaim - Date.now();
-          if (diff <= 0) setTimeLeft({ h: 0, m: 0, s: 0, percent: 0 });
-          else setTimeLeft({ h: Math.floor(diff / 3600000), m: Math.floor((diff % 3600000) / 60000), s: Math.floor((diff % 60000) / 1000), percent: (diff / 86400000) * 100 });
-        }, 1000);
-        return () => clearInterval(interval);
-      }, [asset]);
-      return (
-        <div className="flex flex-col items-center gap-2">
-          <div className="relative w-12 h-12">
-            <svg className="w-full h-full" viewBox="0 0 36 36">
-              <circle cx="18" cy="18" r="16" fill="none" stroke="#222" strokeWidth="3" />
-              <circle cx="18" cy="18" r="16" fill="none" stroke="#eab308" strokeWidth="3" strokeDasharray="100" strokeDashoffset={100 - timeLeft.percent} strokeLinecap="round" className="transition-all duration-1000" />
-            </svg>
-            <div className="absolute inset-0 flex items-center justify-center text-[8px] font-bold">{timeLeft.h}h</div>
-          </div>
-          <p className="text-[10px] font-mono text-gray-400">{timeLeft.m}m {timeLeft.s}s</p>
-        </div>
+    setLoadingAssets(true);
+    setAssetsError("");
+
+    try {
+      const { data, error } = await supabase
+        .from("investments")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+
+      const assets = (data || []).map((asset) => ({
+        ...asset,
+        plans: plans.find((p) => p.id === asset.plan_id) || {},
+      }));
+
+      setMyAssets(assets);
+    } catch (error) {
+      console.error("Erro ao carregar investimentos:", error);
+      setAssetsError("Não foi possível carregar seus investimentos.");
+    } finally {
+      setLoadingAssets(false);
+    }
+  };
+
+  useEffect(() => {
+    loadAssets();
+  }, [user?.id, plans]);
+
+  const claimEarnings = async (assetId) => {
+    if (claimingId) return;
+
+    setClaimingId(assetId);
+
+    try {
+      const { error } = await supabase.rpc(
+        "claim_asset_earnings",
+        { investment_id: assetId }
       );
-    };
+
+      if (error) throw error;
+
+      await fetchUserProfile(user.id);
+      await loadAssets();
+
+      alert("Lucros coletados com sucesso!");
+    } catch (error) {
+      console.error("Erro ao coletar rendimentos:", error);
+      alert("Erro ao coletar: " + error.message);
+    } finally {
+      setClaimingId(null);
+    }
+  };
+
+  const AssetTimer = ({ asset }) => {
+    const [timeLeft, setTimeLeft] = useState({
+      h: 0,
+      m: 0,
+      s: 0,
+      percent: 100,
+      ready: false,
+    });
+
+    useEffect(() => {
+      const updateTimer = () => {
+        const lastClaim = asset.last_claim
+          ? new Date(asset.last_claim).getTime()
+          : asset.created_at
+            ? new Date(asset.created_at).getTime()
+            : Date.now();
+
+        const nextClaim = lastClaim + 86400000;
+        const diff = Math.max(0, nextClaim - Date.now());
+
+        setTimeLeft({
+          h: Math.floor(diff / 3600000),
+          m: Math.floor((diff % 3600000) / 60000),
+          s: Math.floor((diff % 60000) / 1000),
+          percent: (diff / 86400000) * 100,
+          ready: diff === 0,
+        });
+      };
+
+      updateTimer();
+
+      const interval = setInterval(updateTimer, 1000);
+
+      return () => clearInterval(interval);
+    }, [asset.last_claim, asset.created_at]);
 
     return (
-      <div className="p-6 max-w-5xl mx-auto space-y-8">
-        <div className="grid gap-4">
-          <h3 className="text-xl font-bold text-white">Meus Ativos <span className="text-yellow-500">Individuais</span></h3>
-          {myAssets.length === 0 ? (<div className="p-12 text-center bg-[#111] border border-dashed border-[#333] rounded-3xl text-gray-500">Nenhum ativo adquirido.</div>) : (
-            myAssets.map((asset, i) => (
-              <div key={i} className="bg-[#111] p-5 rounded-3xl border border-[#222] flex items-center justify-between hover:border-yellow-500/50 transition-all">
-                <div className="flex items-center gap-4">
-                  <img src={asset.plans?.img || FALLBACK_PLANS_IMAGES[asset.plans?.name] || 'https://via.placeholder.com/400'} className="w-16 h-16 rounded-2xl object-cover" alt="" />
-                  <div>
-                    <p className="text-white font-bold text-lg">{asset.plans?.name}</p>
-                    <p className="text-gray-500 text-xs">Investimento: R$ {asset.plans?.price}</p>
-                    <p className="text-green-400 font-bold text-sm">+ R$ {asset.plans?.yield}/dia</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-6">
-                  <AssetTimer asset={asset} />
-                  <button onClick={() => claimEarnings(asset.id)} disabled={asset.last_claim && (new Date(asset.last_claim).getTime() + 86400000 > Date.now())} className="bg-yellow-500 text-black px-4 py-2 rounded-xl font-bold text-xs hover:bg-yellow-400 disabled:opacity-40">Sacar Lucro</button>
-                </div>
-              </div>
-            ))
-          )}
+      <div className="flex flex-col items-center gap-2">
+        <div className="relative w-12 h-12">
+          <svg className="w-full h-full" viewBox="0 0 36 36">
+            <circle
+              cx="18"
+              cy="18"
+              r="16"
+              fill="none"
+              stroke="#222"
+              strokeWidth="3"
+            />
+            <circle
+              cx="18"
+              cy="18"
+              r="16"
+              fill="none"
+              stroke="#eab308"
+              strokeWidth="3"
+              strokeDasharray="100"
+              strokeDashoffset={100 - timeLeft.percent}
+              strokeLinecap="round"
+              className="transition-all duration-1000"
+            />
+          </svg>
+
+          <div className="absolute inset-0 flex items-center justify-center text-[8px] font-bold">
+            {timeLeft.h}h
+          </div>
         </div>
+
+        <p className="text-[10px] font-mono text-gray-400">
+          {timeLeft.ready
+            ? "Disponível"
+            : `${timeLeft.m}m ${timeLeft.s}s`}
+        </p>
       </div>
     );
   };
 
+  if (loadingAssets) {
+    return (
+      <div className="p-12 flex justify-center">
+        <Loader2 className="w-8 h-8 text-yellow-500 animate-spin" />
+      </div>
+    );
+  }
+
+  if (assetsError) {
+    return (
+      <div className="p-8 text-center text-red-400">
+        <p>{assetsError}</p>
+        <button
+          onClick={loadAssets}
+          className="mt-4 bg-yellow-500 text-black px-5 py-2 rounded-xl font-bold"
+        >
+          Tentar novamente
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6 max-w-5xl mx-auto space-y-8">
+      <div className="grid gap-4">
+        <h3 className="text-xl font-bold text-white">
+          Meus Ativos{" "}
+          <span className="text-yellow-500">Individuais</span>
+        </h3>
+
+        {myAssets.length === 0 ? (
+          <div className="p-12 text-center bg-[#111] border border-dashed border-[#333] rounded-3xl text-gray-500">
+            Nenhum ativo adquirido.
+          </div>
+        ) : (
+          myAssets.map((asset) => {
+            const lastClaim = asset.last_claim
+              ? new Date(asset.last_claim).getTime()
+              : asset.created_at
+                ? new Date(asset.created_at).getTime()
+                : Date.now();
+
+            const canClaim =
+              Date.now() >= lastClaim + 86400000;
+
+            return (
+              <div
+                key={asset.id}
+                className="bg-[#111] p-5 rounded-3xl border border-[#222] flex items-center justify-between hover:border-yellow-500/50 transition-all"
+              >
+                <div className="flex items-center gap-4">
+                  <img
+                    src={
+                      asset.plans?.img ||
+                      FALLBACK_PLANS_IMAGES[asset.plans?.name] ||
+                      "https://via.placeholder.com/400"
+                    }
+                    className="w-16 h-16 rounded-2xl object-cover"
+                    alt=""
+                  />
+
+                  <div>
+                    <p className="text-white font-bold text-lg">
+                      {asset.plans?.name || "Ativo"}
+                    </p>
+                    <p className="text-gray-500 text-xs">
+                      Investimento: R${" "}
+                      {Number(asset.amount || asset.plans?.price || 0).toFixed(2)}
+                    </p>
+                    <p className="text-green-400 font-bold text-sm">
+                      + R${" "}
+                      {Number(asset.plans?.yield || 0).toFixed(2)}
+                      /dia
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-6">
+                  <AssetTimer asset={asset} />
+
+                  <button
+                    onClick={() => claimEarnings(asset.id)}
+                    disabled={!canClaim || claimingId !== null}
+                    className="bg-yellow-500 text-black px-4 py-2 rounded-xl font-bold text-xs hover:bg-yellow-400 disabled:opacity-40"
+                  >
+                    {claimingId === asset.id
+                      ? "Processando..."
+                      : "Sacar Lucro"}
+                  </button>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+};
   const AuthScreen = () => (
     <div className="min-h-screen flex items-center justify-center bg-[#0a0a0a] text-white p-4">
       <div className="w-full max-w-md bg-[#111] border border-[#222] p-8 rounded-3xl shadow-2xl">
