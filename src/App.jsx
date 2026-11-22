@@ -409,7 +409,7 @@ const confirmBuy = async () => {
             <label className="text-gray-500 text-sm font-medium">Chave PIX</label>
             <div className="flex gap-2">
               <input 
-                value={user?.pixKey || ''} 
+                defaultValue={user?.pixKey || ''} 
                 onChange={async (e) => {
                 const newPix = e.target.value;
                 setUser({ ...user, pixKey: newPix });
