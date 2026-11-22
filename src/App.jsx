@@ -218,6 +218,264 @@ function ProfileScreen({ user, session }) {
   );
 }
 
+
+function ReferralScreen({ user }) {
+  const [code, setCode] = useState('');
+  const [commissions, setCommissions] = useState([]);
+  const [loadingReferral, setLoadingReferral] = useState(true);
+  const [copied, setCopied] = useState(false);
+
+  const money = (value) =>
+    Number(value || 0).toLocaleString('pt-BR', {
+      style: 'currency',
+      currency: 'BRL'
+    });
+
+  useEffect(() => {
+    if (!user?.id) return;
+
+    async function loadReferral() {
+      setLoadingReferral(true);
+
+      const [profileRes, commissionRes] = await Promise.all([
+        supabase
+          .from('referral_profiles')
+          .select('referral_code')
+          .eq('user_id', user.id)
+          .single(),
+
+        supabase
+          .from('referral_commissions')
+          .select('id, referred_user_id, amount, rate, created_at')
+          .eq('referrer_id', user.id)
+          .order('created_at', { ascending: false })
+      ]);
+
+      if (profileRes.error) {
+        console.error(profileRes.error);
+      } else {
+        setCode(profileRes.data.referral_code);
+      }
+
+      if (commissionRes.error) {
+        console.error(commissionRes.error);
+      } else {
+        setCommissions(commissionRes.data || []);
+      }
+
+      setLoadingReferral(false);
+    }
+
+    loadReferral();
+  }, [user?.id]);
+
+  const totalIndications = new Set(
+    commissions.map(item => item.referred_user_id)
+  ).size;
+
+  const totalEarned = commissions.reduce(
+    (total, item) => total + Number(item.amount || 0),
+    0
+  );
+
+  const level =
+    totalIndications >= 50
+      ? { name: 'OURO', rate: 5, color: 'text-yellow-400' }
+      : totalIndications >= 10
+      ? { name: 'PRATA', rate: 2, color: 'text-gray-300' }
+      : { name: 'BRONZE', rate: 1, color: 'text-orange-400' };
+
+  const nextLevel = totalIndications >= 50 ? 50 :
+    totalIndications >= 10 ? 50 : 10;
+
+  const progress = totalIndications >= 50
+    ? 100
+    : totalIndications >= 10
+    ? ((totalIndications - 10) / 40) * 100
+    : (totalIndications / 10) * 100;
+
+  const referralLink = code
+    ? `${window.location.origin}/?ref=${code}`
+    : '';
+
+  const copyLink = async () => {
+    if (!referralLink) return;
+
+    await navigator.clipboard.writeText(referralLink);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
+  };
+
+  if (loadingReferral) {
+    return (
+      <div className="p-12 flex justify-center">
+        <Loader2 className="w-8 h-8 text-yellow-500 animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-5 md:p-8 max-w-6xl mx-auto space-y-8 pb-32">
+
+      <div>
+        <h2 className="text-3xl font-black text-white">
+          Programa de <span className="text-yellow-500">Indicações</span>
+        </h2>
+        <p className="text-gray-500 mt-2">
+          Indique amigos e receba comissões sobre compras aprovadas.
+        </p>
+      </div>
+
+      <div className="bg-[#111] border border-[#222] rounded-3xl p-6 md:p-8 space-y-5">
+        <div>
+          <p className="text-gray-400 text-sm">Seu link exclusivo</p>
+          <h3 className="text-xl font-bold text-white mt-1">
+            Compartilhe e indique
+          </h3>
+        </div>
+
+        <div className="flex flex-col md:flex-row gap-3">
+          <input
+            readOnly
+            value={referralLink}
+            className="flex-1 min-w-0 bg-[#1a1a1a] border border-[#333] p-4 rounded-xl text-yellow-400"
+          />
+
+          <button
+            onClick={copyLink}
+            disabled={!referralLink}
+            className="bg-yellow-500 text-black font-bold px-6 py-4 rounded-xl"
+          >
+            {copied ? 'Link copiado!' : 'Copiar link'}
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+
+        <div className="bg-[#111] border border-[#222] rounded-3xl p-6">
+          <Users className="text-yellow-500 w-7 h-7" />
+          <p className="text-gray-500 mt-4 text-sm">
+            Indicações confirmadas
+          </p>
+          <h3 className="text-3xl font-black text-white mt-2">
+            {totalIndications}
+          </h3>
+        </div>
+
+        <div className="bg-[#111] border border-[#222] rounded-3xl p-6">
+          <Wallet className="text-green-400 w-7 h-7" />
+          <p className="text-gray-500 mt-4 text-sm">
+            Comissões acumuladas
+          </p>
+          <h3 className="text-3xl font-black text-green-400 mt-2">
+            {money(totalEarned)}
+          </h3>
+        </div>
+
+        <div className="bg-[#111] border border-[#222] rounded-3xl p-6">
+          <TrendingUp className="text-yellow-500 w-7 h-7" />
+          <p className="text-gray-500 mt-4 text-sm">Seu nível atual</p>
+          <h3 className={`text-3xl font-black mt-2 ${level.color}`}>
+            {level.name}
+          </h3>
+          <p className="text-gray-500 text-sm mt-1">
+            Comissão de {level.rate}%
+          </p>
+        </div>
+
+      </div>
+
+      <div className="bg-[#111] border border-[#222] rounded-3xl p-6 space-y-5">
+        <h3 className="text-xl font-bold text-white">
+          Progresso dos níveis
+        </h3>
+
+        <div className="flex justify-between text-sm">
+          <span className="text-gray-400">Seu progresso</span>
+          <span className="text-yellow-500 font-bold">
+            {totalIndications} indicações
+          </span>
+        </div>
+
+        <div className="w-full h-3 bg-[#222] rounded-full overflow-hidden">
+          <div
+            className="h-full bg-yellow-500 rounded-full transition-all"
+            style={{ width: `${Math.min(progress, 100)}%` }}
+          />
+        </div>
+
+        <div className="grid grid-cols-3 gap-2 text-center">
+          <div className="bg-[#1a1a1a] rounded-xl p-3">
+            <p className="text-orange-400 font-black">BRONZE</p>
+            <p className="text-white font-bold">1%</p>
+            <p className="text-gray-500 text-xs">Inicial</p>
+          </div>
+
+          <div className="bg-[#1a1a1a] rounded-xl p-3">
+            <p className="text-gray-300 font-black">PRATA</p>
+            <p className="text-white font-bold">2%</p>
+            <p className="text-gray-500 text-xs">10 indicações</p>
+          </div>
+
+          <div className="bg-[#1a1a1a] rounded-xl p-3">
+            <p className="text-yellow-400 font-black">OURO</p>
+            <p className="text-white font-bold">5%</p>
+            <p className="text-gray-500 text-xs">50 indicações</p>
+          </div>
+        </div>
+
+        {totalIndications < 50 && (
+          <p className="text-gray-400 text-sm">
+            Faltam {nextLevel - totalIndications} indicações
+            para o próximo nível.
+          </p>
+        )}
+      </div>
+
+      <div className="bg-[#111] border border-[#222] rounded-3xl overflow-hidden">
+        <div className="p-6 border-b border-[#222]">
+          <h3 className="text-xl font-bold text-white">
+            Histórico de comissões
+          </h3>
+        </div>
+
+        {commissions.length === 0 ? (
+          <div className="p-12 text-center text-gray-500">
+            Você ainda não possui comissões.
+          </div>
+        ) : (
+          <div className="divide-y divide-[#222]">
+            {commissions.map(item => (
+              <div
+                key={item.id}
+                className="p-5 flex justify-between items-center gap-3"
+              >
+                <div>
+                  <p className="text-white font-bold">
+                    Compra indicada
+                  </p>
+                  <p className="text-gray-500 text-xs">
+                    {new Date(item.created_at).toLocaleDateString('pt-BR')}
+                    {' • '}
+                    {Number(item.rate) * 100}%
+                  </p>
+                </div>
+
+                <p className="text-green-400 font-bold">
+                  {money(item.amount)}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+    </div>
+  );
+}
+
+
 const WalletScreen = ({ user, setUser, handleWithdraw }) => {
   const [pixInput, setPixInput] = useState(user?.pixKey || '');
   const [pixSaved, setPixSaved] = useState(false);
@@ -287,6 +545,19 @@ export default function EnergySkyApp() {
   const [gateway, setGateway] = useState('');
   const [selectedPlan, setSelectedPlan] = useState(null);
   const [buying, setBuying] = useState(false);
+  const [referralCode, setReferralCode] = useState('');
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const codeFromUrl = params.get('ref');
+
+    if (codeFromUrl) {
+      localStorage.setItem('referral_code', codeFromUrl);
+      setReferralCode(codeFromUrl);
+    } else {
+      setReferralCode(localStorage.getItem('referral_code') || '');
+    }
+  }, []);  
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -337,8 +608,20 @@ export default function EnergySkyApp() {
       const phone = formData.get('phone');
       const cpf = formData.get('cpf');
       if (!cpf) return alert('O CPF é obrigatório!');
+      const savedReferral =
+  localStorage.getItem('referral_code') || referralCode || null;
+
       const { data, error } = await supabase.auth.signUp({
-        email, password, options: { data: { full_name: name, phone: phone, cpf: cpf } }
+      email,
+      password,
+      options: {
+      data: {
+      full_name: name,
+      phone: phone,
+      cpf: cpf,
+      referral_code: savedReferral
+      }
+      }
       });
       if (error) return alert(error.message);
       if (data.user) {
@@ -613,6 +896,14 @@ export default function EnergySkyApp() {
         <NavItem icon={<TrendingUp />} label="Meus Ativos" active={page === 'my-investments'} onClick={() => setPage('my-investments')} />
         <NavItem icon={<Wallet />} label="Carteira" active={page === 'wallet'} onClick={() => setPage('wallet')} />
         <NavItem icon={<Users />} label="Meu Perfil" active={page === 'profile'} onClick={() => setPage('profile')} />
+        
+        <NavItem
+         icon={<Users />}
+         label="Indicações"
+         active={page === 'referrals'}
+         onClick={() => setPage('referrals')}
+         />
+
         {user?.isAdmin && <NavItem icon={<Settings />} label="Admin" active={page === 'admin'} onClick={() => setPage('admin')} />}
         <button onClick={handleLogout} className="flex items-center gap-3 text-red-500 font-bold p-3 rounded-2xl hover:bg-red-500/10 transition-all">
           <LogOut className="w-6 h-6" /> <span className="hidden md:inline">Sair</span>
@@ -650,6 +941,8 @@ export default function EnergySkyApp() {
 
         {page === 'admin' && <AdminScreen />}
         {page === 'profile' && <ProfileScreen user={user} session={session} />}
+        {page === 'referrals' && <ReferralScreen user={user} />}
+
       </main>
     </div>
   );
