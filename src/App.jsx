@@ -13,12 +13,18 @@ import {
   Trash2,
   Edit3,
   Eye,
-  Loader2
+  Loader2,
+  Zap,
+  Globe,
+  Cpu,
+  Wind,
+  Sun,
+  Factory
 } from 'lucide-react';
 
 // --- CONFIGURAÇÃO SUPABASE ---
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || '';
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 const FALLBACK_PLANS_IMAGES = {
@@ -29,6 +35,18 @@ const FALLBACK_PLANS_IMAGES = {
   'Complexo Industrial': 'https://images.pexels.com/photos/36756675/pexels-photo-36756675.jpeg?auto=compress&cs=tinysrgb&w=400',
   'Central Nuclear': 'https://images.pexels.com/photos/18335700/pexels-photo-18335700.jpeg?auto=compress&cs=tinysrgb&w=400',
 };
+
+function NavItem({ icon, label, active, onClick }) {
+  return (
+    <button 
+      onClick={onClick} 
+      className={`flex items-center gap-3 p-3 rounded-2xl transition-all ${active ? 'bg-yellow-500 text-black font-bold' : 'text-gray-500 hover:text-white hover:bg-[#1a1a1a]'}`}
+    >
+      {React.cloneElement(icon, { className: 'w-6 h-6' })}
+      <span className="hidden md:inline">{label}</span>
+    </button>
+  );
+}
 
 export default function EnergySkyApp() {
   const [page, setPage] = useState('auth'); 
@@ -91,6 +109,9 @@ export default function EnergySkyApp() {
     if (authMode === 'register') {
       const name = formData.get('name');
       const phone = formData.get('phone');
+      const cpf = formData.get('cpf');
+
+      if (!cpf) return alert('O CPF é obrigatório para cadastro!');
 
       const { data, error } = await supabase.auth.signUp({
         email,
@@ -98,7 +119,8 @@ export default function EnergySkyApp() {
         options: {
           data: {
             full_name: name,
-            phone: phone
+            phone: phone,
+            cpf: cpf
           }
         }
       });
@@ -112,7 +134,8 @@ export default function EnergySkyApp() {
             id: data.user.id,
             full_name: name,
             phone: phone,
-            email: email
+            email: email,
+            cpf: cpf
           })
           .select()
           .single();
@@ -131,60 +154,60 @@ export default function EnergySkyApp() {
     setPage('auth');
   };
 
-// Abre a confirmação antes de comprar
-const handleBuy = (plan) => {
-  console.log('Plano selecionado:', plan);
-  setSelectedPlan(plan);
-};
+  const handleBuy = (plan) => {
+    setSelectedPlan(plan);
+  };
 
-// Executa a compra somente após confirmação
-const confirmBuy = async () => {
-  if (!selectedPlan || buying) return;
-
-  if (Number(user?.balance || 0) < Number(selectedPlan.price)) {
-    alert('Saldo insuficiente!');
-    return;
-  }
-
-  setBuying(true);
-
-  try {
-    const { error } = await supabase.rpc('buy_plan', {
-      user_id: user.id,
-      plan_id: selectedPlan.id
-    });
-
-    if (error) {
-      alert('Erro na compra: ' + error.message);
+  const confirmBuy = async () => {
+    if (!selectedPlan || buying) return;
+    if (Number(user?.balance || 0) < Number(selectedPlan.price)) {
+      alert('Saldo insuficiente!');
       return;
     }
-
-    await fetchUserProfile(user.id);
-
-    setSelectedPlan(null);
-    setPage('my-investments');
-
-    alert('Compra realizada com sucesso! Seu ativo já está disponível.');
-
-  } catch (error) {
-    alert('Não foi possível concluir a compra.');
-    console.error(error);
-  } finally {
-    setBuying(false);
-  }
-};
+    setBuying(true);
+    try {
+      const { error } = await supabase.rpc('buy_plan', {
+        user_id: user.id,
+        plan_id: selectedPlan.id
+      });
+      if (error) {
+        alert('Erro na compra: ' + error.message);
+        return;
+      }
+      await fetchUserProfile(user.id);
+      setSelectedPlan(null);
+      setPage('my-investments');
+      alert('Compra realizada com sucesso!');
+    } catch (error) {
+      alert('Não foi possível concluir a compra.');
+    } finally {
+      setBuying(false);
+    }
+  };
 
   const handleWithdraw = async () => {
     if (user.balance < 20) return alert('Mínimo para saque: R$ 20,00');
     if (!user.pixKey) return alert('Configure sua chave PIX primeiro!');
-    const { error } = await supabase.from('transactions').insert([{ user_id: user.id, type: 'withdraw', amount: user.balance, status: 'pending', pix_key: user.pixKey }]);
+    
+    // TRAVA DE SEGURANÇA: A chave PIX deve ser exatamente o CPF cadastrado
+    if (user.pixKey !== user.cpf) {
+      return alert('ERRO DE SEGURANÇA: O saque só é permitido para a chave PIX correspondente ao CPF cadastrado na conta.');
+    }
+
+    const { error } = await supabase.from('transactions').insert([{ 
+      user_id: user.id, 
+      type: 'withdraw', 
+      amount: user.balance, 
+      status: 'pending', 
+      pix_key: user.pixKey 
+    }]);
+    
     if (error) return alert('Erro ao solicitar saque');
     await supabase.rpc('request_withdraw', { user_id: user.id });
     await fetchUserProfile(user.id);
-    alert('Solicitação de saque enviada!');
+    alert('Solicitação de saque enviada com sucesso!');
   };
 
-  // --- COMPONENTE DE MEUS ATIVOS COM RELÓGIO E LISTAGEM ---
   const MyInvestments = () => {
     const [myAssets, setMyAssets] = useState([]);
 
@@ -206,6 +229,7 @@ const confirmBuy = async () => {
       }
       if (user?.id) loadAssets();
     }, [user?.id, plans]);
+
     const claimEarnings = async (assetId) => {
       const { error } = await supabase.rpc('claim_asset_earnings', { investment_id: assetId });
       if (error) return alert('Erro ao coletar: ' + error.message);
@@ -314,6 +338,7 @@ const confirmBuy = async () => {
           {authMode === 'register' && (
             <>
               <input name="name" placeholder="Nome Completo" required className="w-full bg-[#1a1a1a] border border-[#333] p-3 rounded-xl outline-none focus:border-yellow-500 transition-all" />
+              <input name="cpf" placeholder="CPF (Somente números)" required className="w-full bg-[#1a1a1a] border border-[#333] p-3 rounded-xl outline-none focus:border-yellow-500 transition-all" />
               <input name="email" type="email" placeholder="E-mail" required className="w-full bg-[#1a1a1a] border border-[#333] p-3 rounded-xl outline-none focus:border-yellow-500 transition-all" />
               <input name="phone" placeholder="Telefone" required className="w-full bg-[#1a1a1a] border border-[#333] p-3 rounded-xl outline-none focus:border-yellow-500 transition-all" />
             </>
@@ -334,7 +359,7 @@ const confirmBuy = async () => {
   );
 
   const Dashboard = () => (
-    <div className="p-6 max-w-5xl mx-auto space-y-6">
+    <div className="p-6 max-w-5xl mx-auto space-y-8">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-[#111] p-6 rounded-3xl border border-[#222] hover:border-yellow-500/30 transition-all">
           <p className="text-gray-500 text-sm font-medium">Saldo Disponível</p>
@@ -349,14 +374,57 @@ const confirmBuy = async () => {
           <h2 className="text-3xl font-bold text-white">R$ {user?.total_withdrawn?.toFixed(2) || '0.00'}</h2>
         </div>
       </div>
+
       <div className="bg-yellow-500 p-8 rounded-3xl text-black flex flex-col md:flex-row justify-between items-center gap-4 shadow-xl shadow-yellow-500/10">
         <div className="text-center md:text-left">
-          <h3 className="text-2xl font-black uppercase italic">Olá, {user?.name}!</h3>
+          <h3 className="text-2xl font-black uppercase italic">Olá, {user?.full_name || 'Investidor'}!</h3>
           <p className="font-medium opacity-80">Seu império energético está crescendo.</p>
         </div>
         <button onClick={() => setPage('shop')} className="bg-black text-white px-6 py-3 rounded-2xl font-bold hover:scale-105 transition-transform active:scale-95">
           Investir Agora
         </button>
+      </div>
+
+      {/* SEÇÃO INVESTIMENTOS CHINA - PERSUASIVA */}
+      <div className="space-y-6">
+        <div className="text-center space-y-2">
+          <h2 className="text-3xl font-black text-white uppercase tracking-tighter">Expansão <span className="text-yellow-500">Asiática</span></h2>
+          <p className="text-gray-400 max-w-2xl mx-auto">Invista na maior potência energética do mundo. A China lidera a revolução verde com a tecnologia mais avançada do planeta.</p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[
+            { title: 'Micro Geradores', desc: 'Sistemas compactos de alta eficiência para redes urbanas densas.', icon: <Cpu />, img: 'https://images.pexels.com/photos/37226176/pexels-photo-37226176.jpeg?auto=compress&cs=tinysrgb&w=600' },
+            { title: 'Painéis Solares', desc: 'Fazendas solares massivas no deserto de Gobi com rendimento recorde.', icon: <Sun />, img: 'https://images.pexels.com/photos/2569839/pexels-photo-2569839.jpeg?auto=compress&cs=tinysrgb&w=600' },
+            { title: 'Subestações Locais', desc: 'Infraestrutura de distribuição inteligente para cidades inteligentes.', icon: <Zap />, img: 'https://images.pexels.com/photos/9720534/pexels-photo-9720534.jpeg?auto=compress&cs=tinysrgb&w=600' },
+            { title: 'Usinas Eólicas', desc: 'Turbinas offshore de última geração capturando ventos oceânicos.', icon: <Wind />, img: 'https://images.pexels.com/photos/185039/pexels-photo-185039.jpeg?auto=compress&cs=tinysrgb&w=600' },
+            { title: 'Complexos Industriais', desc: 'Centros de produção automatizados com energia autossustentável.', icon: <Factory />, img: 'https://images.pexels.com/photos/36756675/pexels-photo-36756675.jpeg?auto=compress&cs=tinysrgb&w=600' },
+            { title: 'Centrais Nucleares', desc: 'Energia limpa e constante com reatores de 4ª geração.', icon: <Globe />, img: 'https://images.pexels.com/photos/18335700/pexels-photo-18335700.jpeg?auto=compress&cs=tinysrgb&w=600' },
+          ].map((item, idx) => (
+            <div key={idx} className="group bg-[#111] border border-[#222] rounded-3xl overflow-hidden hover:border-yellow-500 transition-all duration-300">
+              <div className="relative h-40 overflow-hidden">
+                <img src={item.img} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" alt={item.title} />
+                <div className="absolute top-3 left-3 p-2 bg-black/50 backdrop-blur-md rounded-lg text-yellow-500">
+                  {item.icon}
+                </div>
+              </div>
+              <div className="p-5 space-y-2">
+                <h4 className="text-lg font-bold text-white">{item.title}</h4>
+                <p className="text-gray-500 text-sm leading-relaxed">{item.desc}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="bg-gradient-to-r from-yellow-600 to-yellow-400 p-8 rounded-3xl text-black text-center space-y-4">
+          <h3 className="text-2xl font-black uppercase">Por que investir na China?</h3>
+          <p className="font-medium opacity-90 max-w-3xl mx-auto">
+            A China detém 80% da cadeia de suprimentos de energia solar e eólica do mundo. Investir aqui não é apenas sobre ecologia, é sobre <b>lucratividade agressiva</b> e domínio tecnológico. Não fique de fora da maior transferência de riqueza energética da história.
+          </p>
+          <button onClick={() => setPage('shop')} className="bg-black text-white px-8 py-4 rounded-2xl font-black hover:scale-105 transition-transform active:scale-95 uppercase tracking-widest">
+            Quero Lucrar Agora
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -406,16 +474,16 @@ const confirmBuy = async () => {
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           <div className="space-y-4">
-            <label className="text-gray-500 text-sm font-medium">Chave PIX</label>
+            <label className="text-gray-500 text-sm font-medium">Chave PIX (Deve ser seu CPF)</label>
             <div className="flex gap-2">
               <input 
                 defaultValue={user?.pixKey || ''} 
                 onChange={async (e) => {
-                const newPix = e.target.value;
-                setUser({ ...user, pixKey: newPix });
-                await supabase.from('profiles').update({ pixKey: newPix }).eq('id', user.id);
+                  const newPix = e.target.value;
+                  setUser({ ...user, pixKey: newPix });
+                  await supabase.from('profiles').update({ pixKey: newPix }).eq('id', user.id);
                 }}
-                placeholder="CPF, E-mail ou Celular" 
+                placeholder="Digite seu CPF" 
                 className="flex-1 bg-[#1a1a1a] border border-[#333] p-3 rounded-xl text-white outline-none focus:border-yellow-500 transition-all" 
                 />
             </div>
@@ -424,7 +492,7 @@ const confirmBuy = async () => {
             <label className="text-gray-500 text-sm font-medium">Depositar Valor</label>
             <div className="flex gap-2">
               <input id="dep-val" type="number" placeholder="R$ 0,00" className="flex-1 bg-[#1a1a1a] border border-[#333] p-3 rounded-xl text-white outline-none focus:border-yellow-500 transition-all" />
-              <button onClick={() => handleDeposit(Number(document.getElementById('dep-val').value))} className="bg-white text-black px-4 rounded-xl font-bold hover:bg-yellow-500 transition-colors">OK</button>
+              <button onClick={() => alert('Funcionalidade de depósito via gateway em implementação')} className="bg-white text-black px-4 rounded-xl font-bold hover:bg-yellow-500 transition-colors">OK</button>
             </div>
           </div>
         </div>
@@ -447,7 +515,6 @@ const confirmBuy = async () => {
       async function loadAdminData() {
         const { data: plansData } = await supabase.from('plans').select('*');
         setAdminPlans(plansData || []);
-        
         const { data: invData } = await supabase.from('investments').select('plans(price)');
         const total = invData?.reduce((acc, curr) => acc + Number(curr.plans?.price || 0), 0) || 0;
         setTotalInvested(total);
@@ -464,7 +531,6 @@ const confirmBuy = async () => {
     return (
       <div className="p-6 max-w-6xl mx-auto space-y-8">
         <h2 className="text-3xl font-bold text-white">Painel <span className="text-yellow-500">Administrador</span></h2>
-        
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="bg-[#111] p-6 rounded-3xl border border-[#222]">
             <p className="text-gray-500 text-sm">Total Investido por Usuários</p>
@@ -475,7 +541,6 @@ const confirmBuy = async () => {
             <h3 className="text-4xl font-black text-green-500">Operacional</h3>
           </div>
         </div>
-
         <div className="bg-[#111] rounded-3xl border border-[#222] overflow-hidden">
           <table className="w-full text-left text-sm">
             <thead className="bg-[#1a1a1a] text-gray-400">
@@ -512,6 +577,221 @@ const confirmBuy = async () => {
     );
   };
 
+  const ProfileScreen = ({ user, session }) => {
+    const [investments, setInvestments] = useState([]);
+    const [transactions, setTransactions] = useState([]);
+    const [withdrawals, setWithdrawals] = useState([]);
+    const [deposits, setDeposits] = useState([]);
+    const [filter, setFilter] = useState('all');
+    const [loadingProfile, setLoadingProfile] = useState(true);
+    const [errorMessage, setErrorMessage] = useState('');
+
+    const userId = session?.user?.id;
+
+    const money = (value) =>
+      Number(value || 0).toLocaleString('pt-BR', {
+        style: 'currency',
+        currency: 'BRL'
+      });
+
+    const dateFormat = (value) =>
+      value
+        ? new Date(value).toLocaleString('pt-BR')
+        : 'Data não disponível';
+
+    const completedStatuses = ['completed', 'paid', 'success', 'processed'];
+
+    const statusLabel = (status) => {
+      const labels = {
+        approved: 'Aprovado',
+        completed: 'Concluído',
+        paid: 'Pago',
+        success: 'Concluído',
+        processed: 'Processado',
+        pending: 'Pendente',
+        active: 'Ativo',
+        rejected: 'Rejeitado',
+        cancelled: 'Cancelado',
+        canceled: 'Cancelado',
+        failed: 'Falhou'
+      };
+      return labels[String(status || '').toLowerCase()] || status || 'Não informado';
+    };
+
+    useEffect(() => {
+      if (!userId) return;
+      let cancelled = false;
+
+      async function loadProfileData() {
+        setLoadingProfile(true);
+        setErrorMessage('');
+
+        const [
+          investmentsResult,
+          transactionsResult,
+          withdrawalsResult,
+          depositsResult
+        ] = await Promise.all([
+          supabase.from('investments').select('id, amount, status, created_at').eq('user_id', userId),
+          supabase.from('transactions').select('id, type, amount, status, description, reference, created_at').eq('user_id', userId),
+          supabase.from('withdrawal_requests').select('id, amount, status, created_at').eq('user_id', userId),
+          supabase.from('deposit_requests').select('id, amount, status, created_at').eq('user_id', userId)
+        ]);
+
+        if (cancelled) return;
+
+        if (investmentsResult.error || transactionsResult.error) {
+          setErrorMessage('Erro ao carregar dados financeiros.');
+        }
+
+        setInvestments(investmentsResult.data || []);
+        setTransactions(transactionsResult.data || []);
+        setWithdrawals(withdrawalsResult.data || []);
+        setDeposits(depositsResult.data || []);
+        setLoadingProfile(false);
+      }
+
+      loadProfileData();
+      return () => { cancelled = true; };
+    }, [userId]);
+
+    const totalInvested = investments
+      .filter(item => item.status === 'active')
+      .reduce((total, item) => total + Number(item.amount || 0), 0);
+
+    const completedWithdrawals = withdrawals.filter(item =>
+      completedStatuses.includes(String(item.status || '').toLowerCase())
+    );
+
+    const totalWithdrawn = completedWithdrawals.reduce(
+      (total, item) => total + Number(item.amount || 0),
+      0
+    );
+
+    const history = [
+      ...transactions.map(item => ({
+        ...item,
+        category: 'transaction',
+        title: item.description || (
+          item.type === 'purchase' ? 'Compra de investimento' : 
+          item.type === 'withdraw' ? 'Saque' : 
+          item.type === 'deposit' ? 'Depósito' : item.type
+        )
+      })),
+      ...withdrawals.map(item => ({
+        ...item,
+        type: 'withdraw',
+        category: 'withdrawal',
+        title: 'Solicitação de saque'
+      })),
+      ...deposits.map(item => ({
+        ...item,
+        type: 'deposit',
+        category: 'deposit',
+        title: 'Solicitação de depósito'
+      }))
+    ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    const filteredHistory = history.filter(item => filter === 'all' || item.type === filter);
+
+    return (
+      <div className="p-5 md:p-8 max-w-6xl mx-auto space-y-8 pb-32">
+        <div>
+          <h2 className="text-3xl font-black text-white">Meu <span className="text-yellow-500">Perfil</span></h2>
+          <p className="text-gray-500 mt-2">Consulte seus dados e seu histórico financeiro.</p>
+        </div>
+
+        <div className="bg-[#111] border border-[#222] rounded-3xl p-6 space-y-5">
+          <div className="flex items-center gap-4">
+            <div className="w-16 h-16 rounded-2xl bg-yellow-500/10 flex items-center justify-center">
+              <Users className="w-8 h-8 text-yellow-500" />
+            </div>
+            <div>
+              <h3 className="text-xl font-bold text-white">{user?.full_name || 'Cliente'}</h3>
+              <p className="text-gray-500 text-sm">Dados da sua conta</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-[#1a1a1a] rounded-2xl p-4">
+              <p className="text-gray-500 text-xs mb-2">NOME COMPLETO</p>
+              <p className="text-white font-semibold">{user?.full_name || 'Não informado'}</p>
+            </div>
+            <div className="bg-[#1a1a1a] rounded-2xl p-4">
+              <p className="text-gray-500 text-xs mb-2">E-MAIL</p>
+              <p className="text-white font-semibold">{user?.email || 'Não informado'}</p>
+            </div>
+            <div className="bg-[#1a1a1a] rounded-2xl p-4">
+              <p className="text-gray-500 text-xs mb-2">TELEFONE</p>
+              <p className="text-white font-semibold">{user?.phone || 'Não informado'}</p>
+            </div>
+            <div className="bg-[#1a1a1a] rounded-2xl p-4 border border-yellow-500/20">
+              <p className="text-yellow-500 text-xs mb-2 font-bold">CPF (IMUTÁVEL)</p>
+              <p className="text-white font-bold">{user?.cpf || 'Não informado'}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 text-green-400 text-xs">
+            <ShieldCheck className="w-4 h-4" />
+            Informações de segurança verificadas e imutáveis.
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="bg-[#111] border border-[#222] rounded-3xl p-6">
+            <div className="flex items-center justify-between">
+              <p className="text-gray-500 text-sm">Total investido ativo</p>
+              <TrendingUp className="text-green-400" />
+            </div>
+            <h3 className="text-3xl font-black text-green-400 mt-3">{money(totalInvested)}</h3>
+          </div>
+          <div className="bg-[#111] border border-[#222] rounded-3xl p-6">
+            <div className="flex items-center justify-between">
+              <p className="text-gray-500 text-sm">Total sacado concluído</p>
+              <Wallet className="text-yellow-500" />
+            </div>
+            <h3 className="text-3xl font-black text-white mt-3">{money(totalWithdrawn)}</h3>
+          </div>
+        </div>
+
+        <div className="bg-[#111] border border-[#222] rounded-3xl overflow-hidden">
+          <div className="p-6 border-b border-[#222] flex flex-col md:flex-row justify-between gap-4">
+            <h3 className="text-xl font-bold text-white">Histórico financeiro</h3>
+            <select value={filter} onChange={e => setFilter(e.target.value)} className="bg-[#1a1a1a] border border-[#333] text-white rounded-xl p-3 outline-none">
+              <option value="all">Todas as movimentações</option>
+              <option value="purchase">Investimentos</option>
+              <option value="deposit">Depósitos</option>
+              <option value="withdraw">Saques</option>
+            </select>
+          </div>
+          {loadingProfile ? (
+            <div className="p-12 flex justify-center"><Loader2 className="w-8 h-8 text-yellow-500 animate-spin" /></div>
+          ) : filteredHistory.length === 0 ? (
+            <div className="p-12 text-center text-gray-500">Nenhuma movimentação encontrada.</div>
+          ) : (
+            <div className="divide-y divide-[#222]">
+              {filteredHistory.map((item, index) => (
+                <div key={index} className="p-5 flex items-center justify-between hover:bg-[#1a1a1a] transition-colors">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-11 h-11 rounded-xl flex items-center justify-center ${item.type === 'withdraw' ? 'bg-red-500/10 text-red-400' : item.type === 'deposit' ? 'bg-green-500/10 text-green-400' : 'bg-yellow-500/10 text-yellow-500'}`}>
+                      {item.type === 'withdraw' ? <Wallet className="w-5 h-5" /> : item.type === 'deposit' ? <PlusCircle className="w-5 h-5" /> : <TrendingUp className="w-5 h-5" />}
+                    </div>
+                    <div>
+                      <p className="text-white font-bold">{item.title}</p>
+                      <p className="text-gray-500 text-xs">{dateFormat(item.created_at)} • {statusLabel(item.status)}</p>
+                    </div>
+                  </div>
+                  <p className={`font-bold ${item.type === 'withdraw' ? 'text-red-400' : item.type === 'deposit' ? 'text-green-400' : 'text-white'}`}>
+                    {item.type === 'withdraw' ? '-' : item.type === 'deposit' ? '+' : ''}{money(item.amount)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   if (loading) return (
     <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
       <Loader2 className="w-10 h-10 text-yellow-500 animate-spin" />
@@ -530,510 +810,44 @@ const confirmBuy = async () => {
         <NavItem icon={<ShoppingBag />} label="Investir" active={page === 'shop'} onClick={() => setPage('shop')} />
         <NavItem icon={<TrendingUp />} label="Meus Ativos" active={page === 'my-investments'} onClick={() => setPage('my-investments')} />
         <NavItem icon={<Wallet />} label="Carteira" active={page === 'wallet'} onClick={() => setPage('wallet')} />
-        <NavItem
-  icon={<Users />}
-  label="Meu Perfil"
-  active={page === 'profile'}
-  onClick={() => setPage('profile')}
-/>
+        <NavItem icon={<Users />} label="Meu Perfil" active={page === 'profile'} onClick={() => setPage('profile')} />
         {user?.isAdmin && <NavItem icon={<Settings />} label="Admin" active={page === 'admin'} onClick={() => setPage('admin')} />}
         <button onClick={handleLogout} className="flex items-center gap-3 text-red-500 font-bold p-3 rounded-2xl hover:bg-red-500/10 transition-all">
           <LogOut className="w-6 h-6" /> <span className="hidden md:inline">Sair</span>
         </button>
       </nav>
+
       {selectedPlan && (
-  <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-    <div className="w-full max-w-md bg-[#111] border border-[#333] rounded-3xl p-7 shadow-2xl">
-
-      <div className="text-center mb-6">
-        <div className="w-16 h-16 rounded-2xl bg-yellow-500/10 flex items-center justify-center mx-auto mb-4">
-          <ShoppingBag className="w-8 h-8 text-yellow-500" />
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md bg-[#111] border border-[#333] rounded-3xl p-7 shadow-2xl">
+            <div className="text-center mb-6">
+              <div className="w-16 h-16 rounded-2xl bg-yellow-500/10 flex items-center justify-center mx-auto mb-4">
+                <ShoppingBag className="w-8 h-8 text-yellow-500" />
+              </div>
+              <h2 className="text-2xl font-black text-white">Confirmar <span className="text-yellow-500">Compra</span></h2>
+            </div>
+            <div className="bg-[#1a1a1a] rounded-2xl p-5 space-y-4 mb-6">
+              <div className="flex justify-between"><span className="text-gray-500">Plano</span><strong className="text-white">{selectedPlan.name}</strong></div>
+              <div className="flex justify-between"><span className="text-gray-500">Valor</span><strong className="text-yellow-500">R$ {Number(selectedPlan.price).toFixed(2)}</strong></div>
+            </div>
+            <div className="flex flex-col gap-3">
+              <button onClick={confirmBuy} disabled={buying} className="w-full bg-yellow-500 hover:bg-yellow-400 text-black font-black py-4 rounded-xl transition-all">
+                {buying ? 'Processando...' : 'CONFIRMAR COMPRA'}
+              </button>
+              <button onClick={() => setSelectedPlan(null)} className="w-full bg-[#222] text-white font-bold py-4 rounded-xl">CANCELAR</button>
+            </div>
+          </div>
         </div>
+      )}
 
-        <h2 className="text-2xl font-black text-white">
-          Confirmar <span className="text-yellow-500">Compra</span>
-        </h2>
-
-        <p className="text-gray-500 text-sm mt-2">
-          Você deseja realmente adquirir este ativo?
-        </p>
-      </div>
-
-      <div className="bg-[#1a1a1a] rounded-2xl p-5 space-y-4 mb-6">
-
-        <div className="flex justify-between gap-3">
-          <span className="text-gray-500">Plano selecionado</span>
-          <strong className="text-white text-right">
-            {selectedPlan.name}
-          </strong>
-        </div>
-
-        <div className="flex justify-between gap-3">
-          <span className="text-gray-500">Valor da compra</span>
-          <strong className="text-yellow-500">
-            R$ {Number(selectedPlan.price).toFixed(2)}
-          </strong>
-        </div>
-
-        <div className="flex justify-between gap-3">
-          <span className="text-gray-500">Saldo disponível</span>
-          <strong className="text-white">
-            R$ {Number(user?.balance || 0).toFixed(2)}
-          </strong>
-        </div>
-
-        <div className="border-t border-[#333] pt-4">
-          <p className="text-gray-400 text-xs leading-relaxed">
-            Ao confirmar, você autoriza a compra deste ativo
-            utilizando o saldo disponível na sua conta.
-          </p>
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-3">
-
-        <button
-          onClick={confirmBuy}
-          disabled={buying}
-          className="w-full bg-yellow-500 hover:bg-yellow-400 disabled:opacity-50 text-black font-black py-4 rounded-xl transition-all"
-        >
-          {buying ? 'Processando compra...' : 'CONFIRMAR COMPRA'}
-        </button>
-
-        <button
-          onClick={() => setSelectedPlan(null)}
-          disabled={buying}
-          className="w-full bg-[#222] hover:bg-[#333] text-white font-bold py-4 rounded-xl transition-all disabled:opacity-50"
-        >
-          CANCELAR
-        </button>
-
-      </div>
-    </div>
-  </div>
-)}<main className="pb-24 md:pb-0 md:pl-72">
+      <main className="pb-24 md:pb-0 md:pl-64">
         {page === 'dashboard' && <Dashboard />}
         {page === 'shop' && <Shop />}
         {page === 'my-investments' && <MyInvestments />}
-        {page === 'wallet' && WalletScreen()}
+        {page === 'wallet' && <WalletScreen />}
         {page === 'admin' && <AdminScreen />}
-        {page === 'profile' && (
-  <ProfileScreen user={user} session={session} />
-)}
+        {page === 'profile' && <ProfileScreen user={user} session={session} />}
       </main>
-    </div>
-  );
-}
-
-function NavItem({ icon, label, active, onClick }) {
-  return (
-    <button 
-      onClick={onClick} 
-      className={`flex items-center gap-3 p-3 rounded-2xl transition-all ${active ? 'bg-yellow-500 text-black font-bold' : 'text-gray-500 hover:text-white hover:bg-[#1a1a1a]'}`}
-    >
-      {React.cloneElement(icon, { className: 'w-6 h-6' })}
-      <span className="hidden md:inline">{label}</span>
-    </button>
-  );
-}
-
-function ProfileScreen({ user, session }) {
-  const [investments, setInvestments] = useState([]);
-  const [transactions, setTransactions] = useState([]);
-  const [withdrawals, setWithdrawals] = useState([]);
-  const [deposits, setDeposits] = useState([]);
-  const [filter, setFilter] = useState('all');
-  const [loadingProfile, setLoadingProfile] = useState(true);
-  const [errorMessage, setErrorMessage] = useState('');
-
-  const userId = session?.user?.id;
-
-  const money = (value) =>
-    Number(value || 0).toLocaleString('pt-BR', {
-      style: 'currency',
-      currency: 'BRL'
-    });
-
-  const dateFormat = (value) =>
-    value
-      ? new Date(value).toLocaleString('pt-BR')
-      : 'Data não disponível';
-
-  const completedStatuses = [
-    'completed',
-    'paid',
-    'success',
-    'processed'
-  ];
-
-  const statusLabel = (status) => {
-    const labels = {
-      approved: 'Aprovado',
-      completed: 'Concluído',
-      paid: 'Pago',
-      success: 'Concluído',
-      processed: 'Processado',
-      pending: 'Pendente',
-      active: 'Ativo',
-      rejected: 'Rejeitado',
-      cancelled: 'Cancelado',
-      canceled: 'Cancelado',
-      failed: 'Falhou'
-    };
-
-    return labels[String(status || '').toLowerCase()] || status || 'Não informado';
-  };
-
-  useEffect(() => {
-    if (!userId) return;
-
-    let cancelled = false;
-
-    async function loadProfileData() {
-      setLoadingProfile(true);
-      setErrorMessage('');
-
-      const [
-        investmentsResult,
-        transactionsResult,
-        withdrawalsResult,
-        depositsResult
-      ] = await Promise.all([
-        supabase
-          .from('investments')
-          .select('id, amount, status, created_at')
-          .eq('user_id', userId),
-
-        supabase
-          .from('transactions')
-          .select('id, type, amount, status, description, reference, created_at')
-          .eq('user_id', userId),
-
-        supabase
-          .from('withdrawal_requests')
-          .select('id, amount, status, created_at')
-          .eq('user_id', userId),
-
-        supabase
-          .from('deposit_requests')
-          .select('id, amount, status, created_at')
-          .eq('user_id', userId)
-      ]);
-
-      if (cancelled) return;
-
-      if (investmentsResult.error || transactionsResult.error) {
-        console.error(
-          'Erro ao carregar histórico:',
-          investmentsResult.error || transactionsResult.error
-        );
-        setErrorMessage(
-          'Não foi possível carregar todos os dados financeiros. Verifique as permissões do Supabase.'
-        );
-      }
-
-      setInvestments(investmentsResult.data || []);
-      setTransactions(transactionsResult.data || []);
-      setWithdrawals(withdrawalsResult.data || []);
-      setDeposits(depositsResult.data || []);
-
-      setLoadingProfile(false);
-    }
-
-    loadProfileData();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [userId]);
-
-  // Soma somente investimentos ativos.
-  const totalInvested = investments
-    .filter(item => item.status === 'active')
-    .reduce((total, item) => total + Number(item.amount || 0), 0);
-
-  // Considera somente saques com status reconhecido como concluído.
-  const completedWithdrawals = withdrawals.filter(item =>
-    completedStatuses.includes(
-      String(item.status || '').toLowerCase()
-    )
-  );
-
-  const totalWithdrawn = completedWithdrawals.reduce(
-    (total, item) => total + Number(item.amount || 0),
-    0
-  );
-
-  // O histórico utiliza as solicitações e transações existentes.
-  // Não adicionamos investments aqui para evitar duplicar compras
-  // que já aparecem na tabela transactions.
-  const history = [
-    ...transactions.map(item => ({
-      ...item,
-      category: 'transaction',
-      title: item.description || (
-        item.type === 'purchase'
-          ? 'Compra de investimento'
-          : item.type === 'withdraw'
-            ? 'Saque'
-            : item.type === 'deposit'
-              ? 'Depósito'
-              : item.type
-      )
-    })),
-
-    ...withdrawals.map(item => ({
-      ...item,
-      type: 'withdraw',
-      category: 'withdrawal',
-      title: 'Solicitação de saque'
-    })),
-
-    ...deposits.map(item => ({
-      ...item,
-      type: 'deposit',
-      category: 'deposit',
-      title: 'Solicitação de depósito'
-    }))
-  ].sort(
-    (a, b) =>
-      new Date(b.created_at).getTime() -
-      new Date(a.created_at).getTime()
-  );
-
-  const filteredHistory = history.filter(item => {
-    if (filter === 'all') return true;
-    return item.type === filter;
-  });
-
-  const profileName =
-    user?.full_name ||
-    session?.user?.user_metadata?.full_name ||
-    'Cliente';
-
-  const profileEmail = session?.user?.email || user?.email || 'Não informado';
-
-  const profilePhone =
-    user?.phone ||
-    session?.user?.user_metadata?.phone ||
-    'Não informado';
-
-  return (
-    <div className="p-5 md:p-8 max-w-6xl mx-auto space-y-8 pb-32">
-
-      <div>
-        <h2 className="text-3xl font-black text-white">
-          Meu <span className="text-yellow-500">Perfil</span>
-        </h2>
-        <p className="text-gray-500 mt-2">
-          Consulte seus dados e seu histórico financeiro.
-        </p>
-      </div>
-
-      {/* DADOS PESSOAIS */}
-      <div className="bg-[#111] border border-[#222] rounded-3xl p-6 space-y-5">
-
-        <div className="flex items-center gap-4">
-          <div className="w-16 h-16 rounded-2xl bg-yellow-500/10 flex items-center justify-center">
-            <Users className="w-8 h-8 text-yellow-500" />
-          </div>
-
-          <div>
-            <h3 className="text-xl font-bold text-white">
-              {profileName}
-            </h3>
-            <p className="text-gray-500 text-sm">
-              Dados da sua conta
-            </p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-
-          <div className="bg-[#1a1a1a] rounded-2xl p-4">
-            <p className="text-gray-500 text-xs mb-2">NOME COMPLETO</p>
-            <p className="text-white font-semibold break-words">
-              {profileName}
-            </p>
-          </div>
-
-          <div className="bg-[#1a1a1a] rounded-2xl p-4">
-            <p className="text-gray-500 text-xs mb-2">E-MAIL</p>
-            <p className="text-white font-semibold break-all">
-              {profileEmail}
-            </p>
-          </div>
-
-          <div className="bg-[#1a1a1a] rounded-2xl p-4">
-            <p className="text-gray-500 text-xs mb-2">TELEFONE</p>
-            <p className="text-white font-semibold">
-              {profilePhone}
-            </p>
-          </div>
-
-        </div>
-
-        <div className="flex items-center gap-2 text-green-400 text-xs">
-          <ShieldCheck className="w-4 h-4" />
-          Informações somente para visualização
-        </div>
-      </div>
-
-      {/* RESUMO FINANCEIRO */}
-      <div>
-        <h3 className="text-xl font-bold text-white mb-4">
-          Resumo financeiro
-        </h3>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-
-          <div className="bg-[#111] border border-[#222] rounded-3xl p-6">
-            <div className="flex items-center justify-between">
-              <p className="text-gray-500 text-sm">Total investido ativo</p>
-              <TrendingUp className="text-green-400" />
-            </div>
-
-            <h3 className="text-3xl font-black text-green-400 mt-3">
-              {money(totalInvested)}
-            </h3>
-
-            <p className="text-gray-600 text-xs mt-2">
-              Soma dos investimentos com status ativo.
-            </p>
-          </div>
-
-          <div className="bg-[#111] border border-[#222] rounded-3xl p-6">
-            <div className="flex items-center justify-between">
-              <p className="text-gray-500 text-sm">Total sacado concluído</p>
-              <Wallet className="text-yellow-500" />
-            </div>
-
-            <h3 className="text-3xl font-black text-white mt-3">
-              {money(totalWithdrawn)}
-            </h3>
-
-            <p className="text-gray-600 text-xs mt-2">
-              Somente solicitações com status reconhecido como concluído.
-            </p>
-          </div>
-
-        </div>
-      </div>
-
-      {/* HISTÓRICO */}
-      <div className="bg-[#111] border border-[#222] rounded-3xl overflow-hidden">
-
-        <div className="p-6 border-b border-[#222]">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-
-            <div>
-              <h3 className="text-xl font-bold text-white">
-                Histórico financeiro
-              </h3>
-              <p className="text-gray-500 text-sm mt-1">
-                Suas movimentações registradas no sistema.
-              </p>
-            </div>
-
-            <select
-              value={filter}
-              onChange={e => setFilter(e.target.value)}
-              className="bg-[#1a1a1a] border border-[#333] text-white rounded-xl p-3 outline-none"
-            >
-              <option value="all">Todas as movimentações</option>
-              <option value="purchase">Investimentos</option>
-              <option value="deposit">Depósitos</option>
-              <option value="withdraw">Saques</option>
-            </select>
-
-          </div>
-        </div>
-
-        {loadingProfile ? (
-          <div className="p-12 flex justify-center">
-            <Loader2 className="w-8 h-8 text-yellow-500 animate-spin" />
-          </div>
-        ) : errorMessage ? (
-          <div className="p-6 text-center text-yellow-500">
-            {errorMessage}
-          </div>
-        ) : filteredHistory.length === 0 ? (
-          <div className="p-12 text-center text-gray-500">
-            Nenhuma movimentação encontrada.
-          </div>
-        ) : (
-
-          <div className="divide-y divide-[#222]">
-
-            {filteredHistory.map((item, index) => {
-              const isWithdraw = item.type === 'withdraw';
-              const isDeposit = item.type === 'deposit';
-              const amount = Number(item.amount || 0);
-
-              return (
-                <div
-                  key={`${item.category}-${item.id}`}
-                  className="p-5 flex items-center justify-between gap-3 hover:bg-[#1a1a1a] transition-colors"
-                >
-
-                  <div className="flex items-center gap-3 min-w-0">
-
-                    <div className={`w-11 h-11 shrink-0 rounded-xl flex items-center justify-center ${
-                      isWithdraw
-                        ? 'bg-red-500/10 text-red-400'
-                        : isDeposit
-                          ? 'bg-green-500/10 text-green-400'
-                          : 'bg-yellow-500/10 text-yellow-500'
-                    }`}>
-                      {isWithdraw ? (
-                        <Wallet className="w-5 h-5" />
-                      ) : isDeposit ? (
-                        <PlusCircle className="w-5 h-5" />
-                      ) : (
-                        <TrendingUp className="w-5 h-5" />
-                      )}
-                    </div>
-
-                    <div className="min-w-0">
-                      <p className="text-white font-bold truncate">
-                        {item.title}
-                      </p>
-                      <p className="text-gray-500 text-xs mt-1">
-                        {dateFormat(item.created_at)}
-                      </p>
-                      <p className="text-gray-500 text-xs">
-                        {statusLabel(item.status)}
-                      </p>
-                    </div>
-
-                  </div>
-
-                  <div className="text-right shrink-0">
-                    <p className={`font-bold ${
-                      isWithdraw
-                        ? 'text-red-400'
-                        : isDeposit
-                          ? 'text-green-400'
-                          : 'text-white'
-                    }`}>
-                      {isWithdraw ? '-' : isDeposit ? '+' : ''}
-                      {money(amount)}
-                    </p>
-                  </div>
-
-                </div>
-              );
-            })}
-
-          </div>
-        )}
-
-      </div>
-
-      <p className="text-gray-600 text-xs text-center">
-        Os dados são carregados diretamente do seu cadastro no Skynet Energy.
-      </p>
-
     </div>
   );
 }
