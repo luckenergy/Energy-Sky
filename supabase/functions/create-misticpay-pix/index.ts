@@ -92,7 +92,7 @@ Deno.serve(async (req) => {
     }
 
     // 5. Credenciais MisticPay
-    const pk = Deno.env.get("MISTICPAY_RECEIVE_CLIENT_ID");
+    const pk = Deno.env.get("MISTIC_CASHIN_CLIENT_ID");
     const sk = Deno.env.get("MISTIC_CASHIN_CLIENT_SECRET");
 
     if (!pk || !sk) {
