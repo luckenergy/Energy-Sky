@@ -234,37 +234,40 @@ function ReferralScreen({ user }) {
   useEffect(() => {
     if (!user?.id) return;
 
-    async function loadReferral() {
-      setLoadingReferral(true);
 
-      const [profileRes, commissionRes] = await Promise.all([
-        supabase
-          .from('referral_profiles')
-          .select('referral_code')
-          .eq('user_id', user.id)
-          .single(),
+async function loadReferral() {
+  setLoadingReferral(true);
 
-        supabase
-          .from('referral_commissions')
-          .select('id, referred_user_id, amount, rate, created_at')
-          .eq('referrer_id', user.id)
-          .order('created_at', { ascending: false })
-      ]);
+  const { data, error } = await supabase
+    .from('referral_profiles')
+    .select('referral_code')
+    .eq('user_id', user.id)
+    .maybeSingle();
 
-      if (profileRes.error) {
-        console.error(profileRes.error);
-      } else {
-        setCode(profileRes.data.referral_code);
-      }
+  if (error) {
+    console.error('Erro ao buscar código:', error);
+  } else if (data?.referral_code) {
+    setCode(data.referral_code);
+  } else {
+    console.error('Código de indicação não encontrado.');
+  }
 
-      if (commissionRes.error) {
-        console.error(commissionRes.error);
-      } else {
-        setCommissions(commissionRes.data || []);
-      }
+  const { data: commissionData, error: commissionError } =
+    await supabase
+      .from('referral_commissions')
+      .select('id, referred_user_id, amount, rate, created_at')
+      .eq('referrer_id', user.id)
+      .order('created_at', { ascending: false });
 
-      setLoadingReferral(false);
-    }
+  if (commissionError) {
+    console.error(commissionError);
+  } else {
+    setCommissions(commissionData || []);
+  }
+
+  setLoadingReferral(false);
+}
+
 
     loadReferral();
   }, [user?.id]);
@@ -338,6 +341,7 @@ function ReferralScreen({ user }) {
           <input
             readOnly
             value={referralLink}
+            placeholder="Seu link será gerado automaticamente"
             className="flex-1 min-w-0 bg-[#1a1a1a] border border-[#333] p-4 rounded-xl text-yellow-400"
           />
 
