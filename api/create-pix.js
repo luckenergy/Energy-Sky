@@ -1,20 +1,22 @@
-export const config = {
-  runtime: 'edge',
-  regions: ['gru1'], // Roda direto em São Paulo (Brasil)
-};
-
-export default async function handler(req) {
+export default async function handler(req, res) {
   if (req.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Method Not Allowed' }), { status: 405 });
+    return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
   try {
-    const { amount, payerName, payerDocument, transactionId, description } = await req.json();
+    const { amount, payerName, payerDocument, transactionId, description } = req.body;
 
-    const clientId = process.env.MISTIC_CASHIN_CLIENT_ID;
-    const clientSecret = process.env.MISTIC_CASHIN_CLIENT_SECRET;
+    const clientId = process.env.MISTIC_CASHIN_CLIENT_ID?.trim();
+    const clientSecret = process.env.MISTIC_CASHIN_CLIENT_SECRET?.trim();
 
-    const authBase64 = btoa(`${clientId}:${clientSecret}`);
+    if (!clientId || !clientSecret) {
+      return res.status(200).json({
+        error: 'Chaves MISTIC_CASHIN_CLIENT_ID ou MISTIC_CASHIN_CLIENT_SECRET não configuradas na Vercel.',
+      });
+    }
+
+    const authBase64 = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+
     const response = await fetch('https://misticpay.com', {
       method: 'POST',
       headers: {
@@ -30,12 +32,24 @@ export default async function handler(req) {
       }),
     });
 
-    const data = await response.json();
-    return new Response(JSON.stringify(data), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    const rawText = await response.text();
+    let data;
+    try {
+      data = JSON.parse(rawText);
+    } catch {
+      return res.status(200).json({
+        error: `MisticPay Status ${response.status}: ${rawText.slice(0, 150)}`,
+      });
+    }
+
+    if (!response.ok) {
+      return res.status(200).json({
+        error: `MisticPay (${data.code || response.status}): ${data.message || JSON.stringify(data)}`,
+      });
+    }
+
+    return res.status(200).json(data);
   } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), { status: 200 });
+    return res.status(200).json({ error: `Erro interno: ${err.message}` });
   }
 }
