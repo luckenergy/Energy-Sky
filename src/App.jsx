@@ -537,6 +537,12 @@ const WalletScreen = ({ user, setUser, handleWithdraw }) => {
   const [pixInput, setPixInput] = useState(user?.pixKey || '');
   const [pixSaved, setPixSaved] = useState(false);
 
+  // 1. Estados que estavam faltando
+  const [depositAmount, setDepositAmount] = useState('');
+  const [depositLoading, setDepositLoading] = useState(false);
+  const [depositError, setDepositError] = useState('');
+  const [pixPayment, setPixPayment] = useState(null);
+
   const handleSavePix = async () => {
     if (pixInput === (user?.pixKey || '')) return;
     setUser((prev) => ({ ...prev, pixKey: pixInput }));
@@ -547,6 +553,66 @@ const WalletScreen = ({ user, setUser, handleWithdraw }) => {
     }
   };
 
+  const handleDeposit = async () => {
+    const amount = Number(depositAmount);
+
+    if (!Number.isFinite(amount) || amount < 1) {
+      setDepositError('Digite um valor válido, mínimo de R$ 1,00.');
+      return;
+    }
+
+    if (!user?.id) {
+      setDepositError('Faça login novamente.');
+      return;
+    }
+
+    // Valida se o usuário tem CPF cadastrado no perfil
+    const cleanCpf = (user?.cpf || pixInput || '').replace(/\D/g, '');
+    if (cleanCpf.length !== 11) {
+      setDepositError('Cadastre um CPF válido na sua Chave PIX antes de depositar.');
+      return;
+    }
+
+    setDepositLoading(true);
+    setDepositError('');
+    setPixPayment(null);
+
+    try {
+      // 3. Enviando nome e CPF exigidos pela MisticPay
+      const { data, error } = await supabase.functions.invoke(
+        'create-misticpay-pix',
+        {
+          body: {
+            amount,
+            payerName: user?.full_name || 'Cliente Skynet Energy',
+            payerDocument: cleanCpf,
+            description: `Deposito usuario ${user.id}`
+          }
+        }
+      );
+
+      if (error) throw error;
+      if (data?.error) {
+        throw new Error(typeof data.error === 'string' ? data.error : JSON.stringify(data.error));
+      }
+
+      // 4. Extraindo corretamente os dados retornados pela MisticPay
+      const pixData = data?.data || data;
+
+      if (!pixData?.copyPaste && !pixData?.qrCodeBase64) {
+        throw new Error('Resposta inválida da MisticPay ao gerar o PIX.');
+      }
+
+      setPixPayment(pixData);
+
+    } catch (error) {
+      console.error('Erro ao gerar PIX:', error);
+      setDepositError(error.message || 'Erro ao gerar PIX.');
+    } finally {
+      setDepositLoading(false);
+    }
+  };
+
   return (
     <div className="p-6 max-w-3xl mx-auto space-y-8">
       <div className="bg-[#111] p-8 rounded-3xl border border-[#222] space-y-8">
@@ -554,6 +620,7 @@ const WalletScreen = ({ user, setUser, handleWithdraw }) => {
           <Wallet className="text-yellow-500 w-8 h-8" />
           <h2 className="text-2xl font-bold text-white">Carteira Digital</h2>
         </div>
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -574,18 +641,82 @@ const WalletScreen = ({ user, setUser, handleWithdraw }) => {
               />
             </div>
           </div>
+
           <div className="space-y-4">
-            <label className="text-gray-500 text-sm font-medium">Depositar Valor</label>
+            <label className="text-gray-500 text-sm font-medium">
+              Depositar Valor
+            </label>
+
             <div className="flex gap-2">
-              <input id="dep-val" type="number" placeholder="R$ 0,00" className="flex-1 bg-[#1a1a1a] border border-[#333] p-3 rounded-xl text-white outline-none focus:border-yellow-500 transition-all" />
-              <button onClick={() => alert('Em implementação')} className="bg-white text-black px-4 rounded-xl font-bold hover:bg-yellow-500 transition-colors">OK</button>
+              <input
+                type="number"
+                min="1"
+                step="0.01"
+                value={depositAmount}
+                onChange={(e) => setDepositAmount(e.target.value)}
+                placeholder="R$ 0,00"
+                disabled={depositLoading}
+                className="flex-1 bg-[#1a1a1a] border border-[#333] p-3 rounded-xl text-white outline-none focus:border-yellow-500"
+              />
+
+              <button
+                onClick={handleDeposit}
+                disabled={depositLoading}
+                className="bg-yellow-500 text-black px-4 rounded-xl font-bold disabled:opacity-50"
+              >
+                {depositLoading ? 'Gerando...' : 'Depositar'}
+              </button>
             </div>
+
+            {depositError && (
+              <p className="text-red-500 text-sm">{depositError}</p>
+            )}
+
+            {pixPayment && (
+              <div className="bg-[#1a1a1a] border border-yellow-500/30 rounded-xl p-4 space-y-4">
+                <h3 className="text-white font-bold">
+                  PIX gerado com sucesso!
+                </h3>
+
+                {/* 5. Evita duplicar o prefixo base64 caso a API já envie */}
+                {pixPayment.qrCodeBase64 && (
+                  <img
+                    src={
+                      pixPayment.qrCodeBase64.startsWith('data:image')
+                        ? pixPayment.qrCodeBase64
+                        : `data:image/png;base64,${pixPayment.qrCodeBase64}`
+                    }
+                    alt="QR Code PIX"
+                    className="w-52 h-52 mx-auto bg-white p-2 rounded-xl"
+                  />
+                )}
+
+                {pixPayment.copyPaste && (
+                  <>
+                    <textarea
+                      readOnly
+                      value={pixPayment.copyPaste}
+                      className="w-full bg-black text-white p-3 rounded-lg text-sm"
+                    />
+
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(pixPayment.copyPaste);
+                        alert('Código PIX copiado!');
+                      }}
+                      className="w-full bg-yellow-500 text-black font-bold p-3 rounded-xl"
+                    >
+                      Copiar código PIX
+                    </button>
+                  </>
+                )}
+
+                <p className="text-gray-400 text-xs text-center">
+                  Seu saldo será atualizado após a confirmação do pagamento.
+                </p>
+              </div>
+            )}
           </div>
-        </div>
-        <div className="pt-8 border-t border-[#222] text-center space-y-4">
-          <p className="text-gray-500">Saldo para Saque</p>
-          <h3 className="text-5xl font-black text-white">R$ {user?.balance?.toFixed(2)}</h3>
-          <button onClick={handleWithdraw} className="w-full max-w-xs bg-yellow-500 text-black font-black py-4 rounded-2xl hover:bg-yellow-600 transition-all uppercase tracking-widest">Solicitar Saque PIX</button>
         </div>
       </div>
     </div>
