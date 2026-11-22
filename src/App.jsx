@@ -126,7 +126,7 @@ function ProfileScreen({ user, session }) {
 
   return (
     <div className="p-5 md:p-8 max-w-6xl mx-auto space-y-8 pb-32">
-      <div>
+      <div >
         <h2 className="text-3xl font-black text-white">Meu <span className="text-yellow-500">Perfil</span></h2>
         <p className="text-gray-500 mt-2">Consulte seus dados e seu histórico financeiro.</p>
       </div>
@@ -498,36 +498,64 @@ export default function EnergySkyApp() {
     </div>
   );
 
-  const WalletScreen = () => (
-    <div className="p-6 max-w-3xl mx-auto space-y-8">
-      <div className="bg-[#111] p-8 rounded-3xl border border-[#222] space-y-8">
-        <div className="flex items-center gap-4">
-          <Wallet className="text-yellow-500 w-8 h-8" />
-          <h2 className="text-2xl font-bold text-white">Carteira Digital</h2>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <div className="space-y-4">
-            <label className="text-gray-500 text-sm font-medium">Chave PIX (Deve ser seu CPF)</label>
-            <div className="flex gap-2">
-              <input defaultValue={user?.pixKey || ''} onChange={async (e) => { const newPix = e.target.value; setUser({ ...user, pixKey: newPix }); await supabase.from('profiles').update({ pixKey: newPix }).eq('id', user.id); }} placeholder="Digite seu CPF" className="flex-1 bg-[#1a1a1a] border border-[#333] p-3 rounded-xl text-white outline-none focus:border-yellow-500 transition-all" />
+  const WalletScreen = () => {
+    const [pixInput, setPixInput] = useState(user?.pixKey || '');
+    const [pixSaved, setPixSaved] = useState(false);
+
+    const handleSavePix = async () => {
+      if (pixInput === (user?.pixKey || '')) return;
+      setUser({ ...user, pixKey: pixInput });
+      const { error } = await supabase.from('profiles').update({ pixKey: pixInput }).eq('id', user.id);
+      if (!error) {
+        setPixSaved(true);
+        setTimeout(() => setPixSaved(false), 3000);
+      }
+    };
+
+    return (
+      <div className="p-6 max-w-3xl mx-auto space-y-8">
+        <div className="bg-[#111] p-8 rounded-3xl border border-[#222] space-y-8">
+          <div className="flex items-center gap-4">
+            <Wallet className="text-yellow-500 w-8 h-8" />
+            <h2 className="text-2xl font-bold text-white">Carteira Digital</h2>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <label className="text-gray-500 text-sm font-medium">Chave PIX (Deve ser seu CPF)</label>
+                {pixSaved && (
+                  <span className="text-green-500 text-xs font-bold animate-pulse">
+                    ✓ Chave PIX salva!
+                  </span>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  value={pixInput}
+                  onChange={(e) => setPixInput(e.target.value)}
+                  onBlur={handleSavePix}
+                  placeholder="Digite seu CPF"
+                  className="flex-1 bg-[#1a1a1a] border border-[#333] p-3 rounded-xl text-white outline-none focus:border-yellow-500 transition-all"
+                />
+              </div>
+            </div>
+            <div className="space-y-4">
+              <label className="text-gray-500 text-sm font-medium">Depositar Valor</label>
+              <div className="flex gap-2">
+                <input id="dep-val" type="number" placeholder="R$ 0,00" className="flex-1 bg-[#1a1a1a] border border-[#333] p-3 rounded-xl text-white outline-none focus:border-yellow-500 transition-all" />
+                <button onClick={() => alert('Em implementação')} className="bg-white text-black px-4 rounded-xl font-bold hover:bg-yellow-500 transition-colors">OK</button>
+              </div>
             </div>
           </div>
-          <div className="space-y-4">
-            <label className="text-gray-500 text-sm font-medium">Depositar Valor</label>
-            <div className="flex gap-2">
-              <input id="dep-val" type="number" placeholder="R$ 0,00" className="flex-1 bg-[#1a1a1a] border border-[#333] p-3 rounded-xl text-white outline-none focus:border-yellow-500 transition-all" />
-              <button onClick={() => alert('Em implementação')} className="bg-white text-black px-4 rounded-xl font-bold hover:bg-yellow-500 transition-colors">OK</button>
-            </div>
+          <div className="pt-8 border-t border-[#222] text-center space-y-4">
+            <p className="text-gray-500">Saldo para Saque</p>
+            <h3 className="text-5xl font-black text-white">R$ {user?.balance?.toFixed(2)}</h3>
+            <button onClick={handleWithdraw} className="w-full max-w-xs bg-yellow-500 text-black font-black py-4 rounded-2xl hover:bg-yellow-600 transition-all uppercase tracking-widest">Solicitar Saque PIX</button>
           </div>
-        </div>
-        <div className="pt-8 border-t border-[#222] text-center space-y-4">
-          <p className="text-gray-500">Saldo para Saque</p>
-          <h3 className="text-5xl font-black text-white">R$ {user?.balance?.toFixed(2)}</h3>
-          <button onClick={handleWithdraw} className="w-full max-w-xs bg-yellow-500 text-black font-black py-4 rounded-2xl hover:bg-yellow-600 transition-all uppercase tracking-widest">Solicitar Saque PIX</button>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const AdminScreen = () => {
     const [adminPlans, setAdminPlans] = useState([]);
@@ -609,7 +637,7 @@ export default function EnergySkyApp() {
         {page === 'dashboard' && <Dashboard />}
         {page === 'shop' && <Shop />}
         {page === 'my-investments' && <MyInvestments />}
-        {page === 'wallet' && <WalletScreen />}
+        {page === 'wallet' && <WalletScreen() }
         {page === 'admin' && <AdminScreen />}
         {page === 'profile' && <ProfileScreen user={user} session={session} />}
       </main>
