@@ -411,12 +411,13 @@ const confirmBuy = async () => {
               <input 
                 value={user?.pixKey || ''} 
                 onChange={async (e) => {
-                  await supabase.from('profiles').update({ pixKey: e.target.value }).eq('id', user.id);
-                  fetchUserProfile(user.id);
+                const newPix = e.target.value;
+                setUser({ ...user, pixKey: newPix });
+                await supabase.from('profiles').update({ pixKey: newPix }).eq('id', user.id);
                 }}
                 placeholder="CPF, E-mail ou Celular" 
                 className="flex-1 bg-[#1a1a1a] border border-[#333] p-3 rounded-xl text-white outline-none focus:border-yellow-500 transition-all" 
-              />
+                />
             </div>
           </div>
           <div className="space-y-4">
@@ -614,7 +615,7 @@ const confirmBuy = async () => {
         {page === 'dashboard' && <Dashboard />}
         {page === 'shop' && <Shop />}
         {page === 'my-investments' && <MyInvestments />}
-        {page === 'wallet' && <WalletScreen />}
+        {page === 'wallet' && <WalletScreen()}
         {page === 'admin' && <AdminScreen />}
         {page === 'profile' && (
   <ProfileScreen user={user} session={session} />
