@@ -231,52 +231,80 @@ function ReferralScreen({ user }) {
       currency: 'BRL'
     });
 
-  useEffect(() => {
-    if (!user?.id) return;
 
+useEffect(() => {
+  if (!user?.id) return;
 
+  let cancelled = false;
 
-      async function loadReferral() {
-      setLoadingReferral(true);
+  async function loadReferral() {
+    setLoadingReferral(true);
 
-      console.log('Usuário logado:', user.id);
-
-        const { data, error } = await supabase
+    try {
+      // Busca o código existente
+      let { data, error } = await supabase
         .from('referral_profiles')
         .select('referral_code')
         .eq('user_id', user.id)
         .maybeSingle();
 
-      console.log('Código encontrado:', data);
-      console.log('Erro:', error);
+      if (error) throw error;
 
-        if (data?.referral_code) {
-        setCode(data.referral_code);
-        }
+      // Cria um código caso ainda não exista
+      if (!data) {
+        const newCode = crypto.randomUUID()
+          .replace(/-/g, '')
+          .substring(0, 10)
+          .toUpperCase();
 
-        if (error) {
-        alert('Erro ao carregar link: ' + error.message);
-        }
+        const { data: newProfile, error: insertError } =
+          await supabase
+            .from('referral_profiles')
+            .insert({
+              user_id: user.id,
+              referral_code: newCode
+            })
+            .select('referral_code')
+            .single();
 
-        const { data: commissionData, error: commissionError } =
-         await supabase
-         .from('referral_commissions')
-         .select('id, referred_user_id, amount, rate, created_at')
-         .eq('referrer_id', user.id)
-         .order('created_at', { ascending: false });
+        if (insertError) throw insertError;
 
-        if (commissionError) {
-         console.error(commissionError);
-         }
+        data = newProfile;
+      }
 
-        setCommissions(commissionData || []);
-        setLoadingReferral(false);
-        }
+      if (cancelled) return;
 
+      setCode(data.referral_code);
 
+      // Busca as comissões
+      const { data: commissionData, error: commissionError } =
+        await supabase
+          .from('referral_commissions')
+          .select('id, referred_user_id, amount, rate, created_at')
+          .eq('referrer_id', user.id)
+          .order('created_at', { ascending: false });
 
-    loadReferral();
-  }, [user?.id]);
+      if (commissionError) throw commissionError;
+
+      if (cancelled) return;
+
+      setCommissions(commissionData || []);
+
+    } catch (error) {
+      console.error('Erro nas indicações:', error);
+      alert('Erro ao carregar indicações: ' + error.message);
+    } finally {
+      if (!cancelled) setLoadingReferral(false);
+    }
+  }
+
+  loadReferral();
+
+  return () => {
+    cancelled = true;
+  };
+}, [user?.id]);
+
 
   const totalIndications = new Set(
     commissions.map(item => item.referred_user_id)
