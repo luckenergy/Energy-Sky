@@ -235,38 +235,44 @@ function ReferralScreen({ user }) {
     if (!user?.id) return;
 
 
-async function loadReferral() {
-  setLoadingReferral(true);
 
-  const { data, error } = await supabase
-    .from('referral_profiles')
-    .select('referral_code')
-    .eq('user_id', user.id)
-    .maybeSingle();
+      async function loadReferral() {
+      setLoadingReferral(true);
 
-  if (error) {
-    console.error('Erro ao buscar código:', error);
-  } else if (data?.referral_code) {
-    setCode(data.referral_code);
-  } else {
-    console.error('Código de indicação não encontrado.');
-  }
+      console.log('Usuário logado:', user.id);
 
-  const { data: commissionData, error: commissionError } =
-    await supabase
-      .from('referral_commissions')
-      .select('id, referred_user_id, amount, rate, created_at')
-      .eq('referrer_id', user.id)
-      .order('created_at', { ascending: false });
+        const { data, error } = await supabase
+        .from('referral_profiles')
+        .select('referral_code')
+        .eq('user_id', user.id)
+        .maybeSingle();
 
-  if (commissionError) {
-    console.error(commissionError);
-  } else {
-    setCommissions(commissionData || []);
-  }
+      console.log('Código encontrado:', data);
+      console.log('Erro:', error);
 
-  setLoadingReferral(false);
-}
+        if (data?.referral_code) {
+        setCode(data.referral_code);
+        }
+
+        if (error) {
+        alert('Erro ao carregar link: ' + error.message);
+        }
+
+        const { data: commissionData, error: commissionError } =
+         await supabase
+         .from('referral_commissions')
+         .select('id, referred_user_id, amount, rate, created_at')
+         .eq('referrer_id', user.id)
+         .order('created_at', { ascending: false });
+
+        if (commissionError) {
+         console.error(commissionError);
+         }
+
+        setCommissions(commissionData || []);
+        setLoadingReferral(false);
+        }
+
 
 
     loadReferral();
