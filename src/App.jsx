@@ -638,7 +638,14 @@ const WalletScreen = ({ user, setUser, handleWithdraw }) => {
         {page === 'dashboard' && <Dashboard />}
         {page === 'shop' && <Shop />}
         {page === 'my-investments' && <MyInvestments />}
-        {page === 'wallet' && <WalletScreen() }
+        {page === 'wallet' && (
+                  <WalletScreen 
+                  user={user} 
+                  setUser={setUser} 
+                  handleWithdraw={handleWithdraw} 
+                 />
+                 )}
+
         {page === 'admin' && <AdminScreen />}
         {page === 'profile' && <ProfileScreen user={user} session={session} />}
       </main>
