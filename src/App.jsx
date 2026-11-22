@@ -604,6 +604,15 @@ const WalletScreen = ({ user, setUser, handleWithdraw }) => {
       }
 
       setPixPayment(pixData);
+      // Salva o pedido pendente no banco para o Webhook localizar depois
+      await supabase.from('deposit_requests').insert({
+       user_id: user.id,
+       amount: amount,
+       provider_reference: String(pixData.transactionId),
+       status: 'pending',
+       pix_copy_paste: pixData.copyPaste || null,
+       pix_qrcode: pixData.qrCodeBase64 || null,
+     });
 
     } catch (error) {
       console.error('Erro ao gerar PIX:', error);
@@ -855,14 +864,47 @@ export default function EnergySkyApp() {
   };
 
   const handleWithdraw = async () => {
-    if (user.balance < 20) return alert('Mínimo para saque: R$ 20,00');
-    if (!user.pixKey) return alert('Configure sua chave PIX primeiro!');
-    if (user.pixKey !== user.cpf) return alert('ERRO DE SEGURANÇA: A chave PIX deve ser o CPF cadastrado.');
-    const { error } = await supabase.from('transactions').insert([{ user_id: user.id, type: 'withdraw', amount: user.balance, status: 'pending', pix_key: user.pixKey }]);
-    if (error) return alert('Erro ao solicitar saque');
-    await supabase.rpc('request_withdraw', { user_id: user.id });
-    await fetchUserProfile(user.id);
-    alert('Solicitação de saque enviada!');
+    const amountToWithdraw = Number(user?.balance || 0);
+    if (amountToWithdraw < 20) return alert('Mínimo para saque: R$ 20,00');
+
+    const cleanPix = String(user?.pixKey || '').replace(/\D/g, '');
+    const cleanCpf = String(user?.cpf || '').replace(/\D/g, '');
+
+    if (!cleanPix) return alert('Configure sua chave PIX primeiro!');
+    if (cleanCpf && cleanPix !== cleanCpf) {
+      return alert('ERRO DE SEGURANÇA: A chave PIX deve ser o CPF cadastrado.');
+    }
+
+    try {
+      const { data, error } = await supabase.functions.invoke('withdraw-misticpay-pix', {
+        body: {
+          userId: user.id,
+          amount: amountToWithdraw,
+          pixKey: cleanPix,
+          pixKeyType: 'CPF',
+        },
+      });
+
+      if (error) throw error;
+      if (data?.error) return alert(data.error);
+
+      // Registra também no histórico geral de transações
+      await supabase.from('transactions').insert([
+        {
+          user_id: user.id,
+          type: 'withdraw',
+          amount: amountToWithdraw,
+          status: 'completed',
+          pix_key: cleanPix,
+        },
+      ]);
+
+      await fetchUserProfile(user.id);
+      alert('Saque PIX enviado com sucesso!');
+    } catch (err) {
+      console.error('Erro ao sacar:', err);
+      alert('Erro ao processar saque: ' + (err.message || 'Tente novamente.'));
+    }
   };
 
   const MyInvestments = () => {
