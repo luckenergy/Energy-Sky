@@ -219,7 +219,7 @@ function ProfileScreen({ user, session }) {
 }
 
 
-function ReferralScreen({ user }) {
+function ReferralScreen({ user, setUser }) {
   const [code, setCode] = useState('');
   const [commissions, setCommissions] = useState([]);
   const [loadingReferral, setLoadingReferral] = useState(true);
@@ -232,6 +232,7 @@ function ReferralScreen({ user }) {
     });
 
 
+
 useEffect(() => {
   if (!user?.id) return;
 
@@ -241,7 +242,7 @@ useEffect(() => {
     setLoadingReferral(true);
 
     try {
-      // Busca o código existente
+      // Buscar código de indicação
       let { data, error } = await supabase
         .from('referral_profiles')
         .select('referral_code')
@@ -250,7 +251,7 @@ useEffect(() => {
 
       if (error) throw error;
 
-      // Cria um código caso ainda não exista
+      // Criar código caso não exista
       if (!data) {
         const newCode = crypto.randomUUID()
           .replace(/-/g, '')
@@ -276,7 +277,7 @@ useEffect(() => {
 
       setCode(data.referral_code);
 
-      // Busca as comissões
+      // Buscar comissões
       const { data: commissionData, error: commissionError } =
         await supabase
           .from('referral_commissions')
@@ -289,6 +290,23 @@ useEffect(() => {
       if (cancelled) return;
 
       setCommissions(commissionData || []);
+
+      // Atualizar saldo da conta
+      const { data: profileData, error: profileError } =
+        await supabase
+          .from('profiles')
+          .select('balance')
+          .eq('id', user.id)
+          .single();
+
+      if (profileError) throw profileError;
+
+      if (!cancelled && profileData) {
+        setUser(prev => ({
+          ...prev,
+          balance: Number(profileData.balance || 0)
+        }));
+      }
 
     } catch (error) {
       console.error('Erro nas indicações:', error);
@@ -303,7 +321,8 @@ useEffect(() => {
   return () => {
     cancelled = true;
   };
-}, [user?.id]);
+}, [user?.id, setUser]);
+
 
 
   const totalIndications = new Set(
@@ -978,7 +997,7 @@ export default function EnergySkyApp() {
 
         {page === 'admin' && <AdminScreen />}
         {page === 'profile' && <ProfileScreen user={user} session={session} />}
-        {page === 'referrals' && <ReferralScreen user={user} />}
+        {page === 'referrals' && (<ReferralScreen user={user} setUser={setUser} />)}
 
       </main>
     </div>
