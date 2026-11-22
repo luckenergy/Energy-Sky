@@ -1010,17 +1010,17 @@ export default function EnergySkyApp() {
         {page === 'referrals' && (<ReferralScreen user={user} setUser={setUser} />)}
 
       </main>
-      {communityLink && (
-       <a
-        href={communityLink}
-        target="_blank"
-        rel="noopener noreferrer"
-        title="Entre no nosso grupo"
-        className="fixed bottom-24 right-5 md:bottom-8 md:right-8 z-[90] flex items-center gap-3 bg-green-500 hover:bg-green-400 text-black font-black px-5 py-4 rounded-full shadow-2xl hover:scale-105 transition-all"
-        >
-        <Users className="w-6 h-6" />
-        <span>ENTRAR NO GRUPO</span>
-      </a>
+     {communityLink && (
+      <a
+       href={communityLink}
+       target="_blank"
+       rel="noopener noreferrer"
+       title="Entre no nosso grupo"
+       className="fixed bottom-24 right-3 md:bottom-8 md:right-6 z-[90] flex items-center gap-2 bg-green-500 hover:bg-green-400 text-black font-bold text-sm px-3 py-2.5 rounded-full shadow-xl hover:scale-105 transition-all"
+     >
+       <Users className="w-5 h-5" />
+       <span>GRUPO</span>
+     </a>
      )}
     </div>
   );
