@@ -1,5 +1,4 @@
 export default async function handler(req, res) {
-  // Libera CORS
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
@@ -33,7 +32,7 @@ export default async function handler(req, res) {
     const response = await fetch(endpoint, {
       method: "POST",
       headers: {
-        Authorization: `Basic ${authBase64}`,
+        "Authorization": `Basic ${authBase64}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
