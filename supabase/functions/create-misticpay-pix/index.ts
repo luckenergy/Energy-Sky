@@ -81,27 +81,32 @@ serve(async (req) => {
       }),
     });
 
-    const rawText = await response.text();
+const rawText = await response.text();
 
-    let parsed;
+console.log("MisticPay HTTP Status:", response.status);
+console.log("MisticPay Response:", rawText.slice(0, 2000));
 
-    try {
-      parsed = JSON.parse(rawText);
-    } catch {
-      return jsonResponse({
-        success: false,
-        error: `Resposta inválida da MisticPay: ${rawText.slice(0, 150)}`,
-      }, 502);
-    }
+let parsed;
 
-    if (!response.ok) {
-      return jsonResponse({
-        success: false,
-        error: `MisticPay (${parsed.code || response.status}): ${
-          parsed.message || "Erro na criação do PIX"
-        }`,
-      }, 502);
-    }
+try {
+  parsed = JSON.parse(rawText);
+} catch {
+  return jsonResponse({
+    success: false,
+    error: "A MisticPay retornou uma resposta que não é JSON.",
+    httpStatus: response.status,
+    responsePreview: rawText.slice(0, 500),
+  }, 502);
+}
+
+if (!response.ok) {
+  return jsonResponse({
+    success: false,
+    error: parsed?.message || "Erro na API MisticPay.",
+    code: parsed?.code || null,
+    httpStatus: response.status,
+  }, 502);
+}
 
     const tx = parsed?.data || parsed?.transaction || parsed;
 
