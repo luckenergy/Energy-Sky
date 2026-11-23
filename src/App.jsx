@@ -1180,7 +1180,6 @@ export default function EnergySkyApp() {
       return alert('ERRO DE SEGURANÇA: A chave PIX deve ser o CPF cadastrado.');
     }
 
-    // Gera a chave única de idempotência para evitar saques duplicados
     const idempotencyKey = crypto.randomUUID();
 
     try {
@@ -1197,18 +1196,13 @@ export default function EnergySkyApp() {
         },
       });
 
-      if (error) throw error;
-      if (data?.error) return alert(data.error);
+      if (error) {
+        // Tenta extrair a mensagem amigável retornada pela Edge Function (ex: erro 400)
+        const errorBody = await error.context?.json?.().catch(() => null);
+        throw new Error(errorBody?.error || error.message || 'Erro ao processar saque.');
+      }
 
-      await supabase.from('transactions').insert([
-        {
-          user_id: user.id,
-          type: 'withdraw',
-          amount: amountToWithdraw,
-          status: 'completed',
-          pix_key: cleanPix,
-        },
-      ]);
+      if (data?.error) return alert(data.error);
 
       await fetchUserProfile(user.id);
       alert(`Saque de R$ ${amountToWithdraw.toFixed(2)} enviado com sucesso!`);
