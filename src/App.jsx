@@ -649,31 +649,24 @@ const WalletScreen = ({ user, setUser, handleWithdraw }) => {
 
     try {
       
-const { data: pixData, error: pixError } =
-  await supabase.functions.invoke('create-misticpay-pix', {
-    body: {
-      amount: Number(amount.toFixed(2)),
-      payerName: String(
-        user?.full_name || user?.name || 'Cliente'
-      ),
-      payerDocument: cleanCpf,
-      transactionId: crypto.randomUUID(),
-      description: 'Deposito Skynet Energy',
-    },
-  });
 
-console.log('Resposta da Edge Function:', pixData);
-console.log('Erro da Edge Function:', pixError);
+const { data: pixData, error: pixError } =
+  await supabase.functions.invoke(
+    'create-misticpay-pix',
+    {
+      body: {
+        amount: Number(amount),
+        payerName: user?.full_name || user?.name || 'Cliente',
+        payerDocument: cleanCpf,
+        transactionId: crypto.randomUUID(),
+        description: 'Deposito Skynet Energy',
+      },
+    }
+  );
 
 if (pixError) {
-  let details = '';
-
-  try {
-    details = await pixError.context?.text?.();
-  } catch (_) {}
-
   throw new Error(
-    details || pixError.message || 'Erro ao conectar com o Supabase.'
+    pixError.message || 'Erro ao conectar com o Supabase.'
   );
 }
 
@@ -682,6 +675,7 @@ if (!pixData?.success) {
     pixData?.error || 'Não foi possível gerar o PIX.'
   );
 }
+
 
 
 
