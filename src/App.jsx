@@ -630,13 +630,16 @@ const handleDeposit = async () => {
     return;
   }
 
-  const cleanCpf = String(user?.cpf || '')
-    .replace(/\D/g, '');
+const cleanCpf = String(
+  user?.cpf || savedPix || user?.pixKey || ''
+).replace(/\D/g, '');
 
-  if (cleanCpf.length !== 11) {
-    setDepositError('Cadastre um CPF válido na sua conta antes de depositar.');
-    return;
-  }
+if (cleanCpf.length !== 11) {
+  setDepositError(
+    'Cadastre um CPF válido na sua conta antes de depositar.'
+  );
+  return;
+}
 
   setDepositLoading(true);
   setDepositError('');
