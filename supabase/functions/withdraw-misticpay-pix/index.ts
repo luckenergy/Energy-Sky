@@ -53,25 +53,34 @@ Deno.serve(async (req) => {
       body: JSON.stringify({ balance: newBalance }),
     });
 
-    // 3. Dispara o saque na MisticPay
-    const authBase64 = btoa(`${clientId}:${clientSecret}`);
-    const idempotencyKey = crypto.randomUUID();
+// 3. Dispara o saque pela Edge Function do Supabase
 
-    const response = await fetch("https://misticpay.com", {
-      method: "POST",
-      headers: {
-        "Authorization": `Basic ${authBase64}`,
-        "Content-Type": "application/json",
-        "X-Idempotency-Key": idempotencyKey,
-      },
-      body: JSON.stringify({
-        amount: withdrawAmount,
-        pixKey: String(pixKey).trim(),
-        pixKeyType: pixKeyType || "CPF",
-        description: `Saque Skynet Energy - ${userId}`,
-      }),
-    });
+const idempotencyKey = crypto.randomUUID();
 
+const { data, error } = await supabase.functions.invoke(
+  "withdraw-misticpay-pix",
+  {
+    body: {
+      amount: withdrawAmount,
+      pixKey: String(pixKey).trim(),
+      pixKeyType: pixKeyType || "CPF",
+      idempotencyKey,
+    },
+    headers: {
+      "Idempotency-Key": idempotencyKey,
+    },
+  }
+);
+
+if (error) {
+  throw new Error(error.message || "Erro ao solicitar saque.");
+}
+
+if (!data?.success) {
+  throw new Error(data?.error || "Não foi possível realizar o saque.");
+}
+
+console.log("Saque solicitado:", data);
     const data = await response.json();
 
     // 4. Se a MisticPay recusar o saque, devolve o saldo ao usuário
