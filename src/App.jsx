@@ -616,153 +616,117 @@ const WalletScreen = ({ user, setUser, handleWithdraw }) => {
       alert('Erro ao salvar chave PIX: ' + error.message);
     }
   };
+// GERAR DEPÓSITO PIX - MISTICPay
+const handleDeposit = async () => {
+  const amount = Number(depositAmount);
 
-  // Gerar depósito PIX
-  // Gerar depósito PIX
-  const handleDeposit = async () => {
-    const amount = Number(depositAmount);
+  if (!Number.isFinite(amount) || amount < 1 || amount !== Math.round(amount * 100) / 100) {
+    setDepositError('Digite um valor válido, mínimo de R$ 1,00.');
+    return;
+  }
 
-    if (!Number.isFinite(amount) || amount < 1) {
-      setDepositError('Digite um valor válido, mínimo de R$ 1,00.');
-      return;
+  if (!user?.id) {
+    setDepositError('Faça login novamente.');
+    return;
+  }
+
+  const cleanCpf = String(user?.cpf || '')
+    .replace(/\D/g, '');
+
+  if (cleanCpf.length !== 11) {
+    setDepositError('Cadastre um CPF válido na sua conta antes de depositar.');
+    return;
+  }
+
+  setDepositLoading(true);
+  setDepositError('');
+  setPixPayment(null);
+
+  try {
+    // Confirma a sessão autenticada
+    const { data: sessionData, error: sessionError } =
+      await supabase.auth.getSession();
+
+    if (sessionError || !sessionData?.session) {
+      throw new Error('Sua sessão expirou. Faça login novamente.');
     }
 
-    if (!user?.id) {
-      setDepositError('Faça login novamente.');
-      return;
-    }
+    // Chave única para evitar depósitos duplicados
+    const idempotencyKey = crypto.randomUUID();
 
-    const cleanCpf = String(
-      user?.cpf || savedPix || pixInput || ''
-    ).replace(/\D/g, '');
-
-    if (cleanCpf.length !== 11) {
-      setDepositError(
-        'Cadastre um CPF válido na sua conta antes de depositar.'
-      );
-      return;
-    }
-
-    setDepositLoading(true);
-    setDepositError('');
-    setPixPayment(null);
-
-    try {
-      
-
-// 1. Gere a chave única ANTES de chamar a função (ex: no início da função de saque)
-const idempotencyKey = crypto.randomUUID();
-
-// 2. Envie a chave tanto no Header quanto no Body para não ter erro
-const { data, error } = await supabase.functions.invoke("NOME_DA_SUA_FUNCAO", {
-  headers: {
-    "X-Idempotency-Key": idempotencyKey,
-  },
-  body: {
-    amount: Number(valorDoSaque),       // Coloque aqui sua variável de valor
-    pixKey: chavePix,                   // Coloque aqui sua variável da chave PIX
-    pixKeyType: tipoDaChave,            // Ex: "CPF", "EMAIL", "TELEFONE", "CHAVE_ALEATORIA"
-    idempotencyKey: idempotencyKey,     // Enviando aqui também como garantia
-  },
-});
-
-if (error) {
-  console.error("Erro no saque:", error);
-  alert("Erro ao solicitar saque.");
-  return;
-}
-
-console.log("Saque realizado:", data);
-
-
-if (pixError) {
-  throw new Error(
-    pixError.message || 'Erro ao conectar com o Supabase.'
-  );
-}
-
-if (!pixData?.success) {
-  throw new Error(
-    pixData?.error || 'Não foi possível gerar o PIX.'
-  );
-}
-
-
-
-
-const pixResult = pixData.data || pixData;
-
-const copyPaste =
-  pixResult.copyPaste ||
-  pixResult.copy_paste ||
-  pixResult.pixCopiaECola ||
-  pixResult.pix_copy_paste ||
-  pixResult.emv ||
-  null;
-
-const qrCodeBase64 =
-  pixResult.qrCodeBase64 ||
-  pixResult.qr_code_base64 ||
-  pixResult.qrcodeBase64 ||
-  pixResult.base64 ||
-  pixResult.qrcodeUrl ||
-  pixResult.qrCodeUrl ||
-  pixResult.qrcode ||
-  pixResult.qrCode ||
-  null;
-
-if (!copyPaste && !qrCodeBase64) {
-  console.error('Resposta completa da MisticPay:', pixData);
-
-  throw new Error(
-    'A MisticPay não retornou o código PIX nem o QR Code. Verifique a resposta da API.'
-  );
-}
-
-setPixPayment({
-  ...pixResult,
-  copyPaste,
-  qrCodeBase64,
-  amount,
-});
-
-
-      setDepositAmount('');
-
-      // Registra a solicitação no banco
-      const { error: insertError } = await supabase
-        .from('deposit_requests')
-        .insert({
-          user_id: user.id,
+    const { data, error } = await supabase.functions.invoke(
+      'create-misticpay-pix',
+      {
+        headers: {
+          'X-Idempotency-Key': idempotencyKey,
+        },
+        body: {
           amount,
-          provider_reference: String(
-            pixResult.transactionId ||
-            pixResult.transaction_id ||
-            pixResult.id ||
-            pixResult.reference ||
-            ''
-          ),
-          status: 'pending',
-          pix_copy_paste: pixResult.copyPaste || null,
-          pix_qrcode: pixResult.qrCodeBase64 || null,
-        });
-
-      if (insertError) {
-        console.error('Erro ao registrar depósito:', insertError);
-
-        setDepositError(
-          'O PIX foi gerado, mas houve erro ao registrar o depósito. Entre em contato com o suporte.'
-        );
+          payerName: user.full_name || 'Cliente',
+          payerDocument: cleanCpf,
+          transactionId: idempotencyKey,
+          description: 'Deposito PIX',
+        },
       }
+    );
 
-    } catch (error) {
-      console.error('Erro ao gerar PIX:', error);
-      setDepositError(error.message || 'Erro ao gerar PIX.');
-
-    } finally {
-      setDepositLoading(false);
+    if (error) {
+      const errorBody = await error.context?.json?.().catch(() => null);
+      throw new Error(
+        errorBody?.error || error.message || 'Erro ao criar PIX.'
+      );
     }
-  };
+
+    if (!data?.success) {
+      throw new Error(data?.error || 'Não foi possível gerar o PIX.');
+    }
+
+    const pixResult = data.data || data;
+
+    const copyPaste =
+      data.copyPaste ||
+      pixResult.copyPaste ||
+      pixResult.copy_paste ||
+      pixResult.pixCopiaECola ||
+      pixResult.pix_copy_paste ||
+      pixResult.emv ||
+      null;
+
+    const qrCodeBase64 =
+      data.qrCodeBase64 ||
+      pixResult.qrCodeBase64 ||
+      pixResult.qr_code_base64 ||
+      pixResult.qrcodeBase64 ||
+      pixResult.base64 ||
+      data.qrcodeUrl ||
+      pixResult.qrcodeUrl ||
+      pixResult.qrCodeUrl ||
+      null;
+
+    if (!copyPaste && !qrCodeBase64) {
+      throw new Error('A MisticPay não retornou os dados do PIX.');
+    }
+
+    // A Edge Function deve salvar o depósito no banco.
+    // Não fazer INSERT novamente pelo frontend.
+
+    setPixPayment({
+      ...pixResult,
+      transactionId: data.transactionId || pixResult.transactionId,
+      copyPaste,
+      qrCodeBase64,
+      amount,
+    });
+
+    setDepositAmount('');
+
+  } catch (error) {
+    console.error('Erro ao gerar depósito PIX:', error);
+    setDepositError(error.message || 'Erro ao gerar PIX.');
+  } finally {
+    setDepositLoading(false);
+  }
+};
   
   // Solicitar saque
   const onWithdrawClick = async () => {
