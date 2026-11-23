@@ -88,19 +88,22 @@ Deno.serve(async (req) => {
     }
 
     // 4. Idempotência: mesma chave para a mesma solicitação
-    const idempotencyKey = String(
-      req.headers.get("X-Idempotency-Key") ||
-      req.headers.get("Idempotency-Key") ||
-      body.idempotencyKey ||
-      ""
-    ).trim();
+const idempotencyKey = String(
+  body?.idempotencyKey || ""
+).trim();
 
-    if (!idempotencyKey || idempotencyKey.length > 255) {
-      return jsonResponse({
-        success: false,
-        error: "Chave de idempotência ausente ou inválida.",
-      }, 400);
-    }
+console.log("IDEMPOTENCY RECEBIDA:", idempotencyKey);
+
+if (!idempotencyKey || idempotencyKey.length > 255) {
+  return jsonResponse({
+    success: false,
+    error: "Chave de idempotência ausente ou inválida.",
+    debug: {
+      bodyRecebido: body,
+      idempotencyKey: body?.idempotencyKey,
+    },
+  }, 400);
+}
 
     const dbHeaders = {
       apikey: serviceKey,
