@@ -57,20 +57,25 @@ Deno.serve(async (req) => {
 
 const idempotencyKey = crypto.randomUUID();
 
+console.log("CHAVE GERADA:", idempotencyKey);
+
 const { data, error } = await supabase.functions.invoke(
-  "withdraw-misticpay-pix",
+  "NOME_DA_FUNCAO",
   {
     body: {
       amount: withdrawAmount,
       pixKey: String(pixKey).trim(),
       pixKeyType: pixKeyType || "CPF",
-      idempotencyKey,
+      idempotencyKey: idempotencyKey,
     },
     headers: {
       "Idempotency-Key": idempotencyKey,
     },
   }
 );
+
+console.log("RESPOSTA DO SAQUE:", data);
+console.log("ERRO DO SAQUE:", error);
 
 if (error) {
   throw new Error(error.message || "Erro ao solicitar saque.");
