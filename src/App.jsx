@@ -650,19 +650,30 @@ const WalletScreen = ({ user, setUser, handleWithdraw }) => {
     try {
       
 
-const { data: pixData, error: pixError } =
-  await supabase.functions.invoke(
-    'create-misticpay-pix',
-    {
-      body: {
-        amount: Number(amount),
-        payerName: user?.full_name || user?.name || 'Cliente',
-        payerDocument: cleanCpf,
-        transactionId: crypto.randomUUID(),
-        description: 'Deposito Skynet Energy',
-      },
-    }
-  );
+// 1. Gere a chave única ANTES de chamar a função (ex: no início da função de saque)
+const idempotencyKey = crypto.randomUUID();
+
+// 2. Envie a chave tanto no Header quanto no Body para não ter erro
+const { data, error } = await supabase.functions.invoke("NOME_DA_SUA_FUNCAO", {
+  headers: {
+    "X-Idempotency-Key": idempotencyKey,
+  },
+  body: {
+    amount: Number(valorDoSaque),       // Coloque aqui sua variável de valor
+    pixKey: chavePix,                   // Coloque aqui sua variável da chave PIX
+    pixKeyType: tipoDaChave,            // Ex: "CPF", "EMAIL", "TELEFONE", "CHAVE_ALEATORIA"
+    idempotencyKey: idempotencyKey,     // Enviando aqui também como garantia
+  },
+});
+
+if (error) {
+  console.error("Erro no saque:", error);
+  alert("Erro ao solicitar saque.");
+  return;
+}
+
+console.log("Saque realizado:", data);
+
 
 if (pixError) {
   throw new Error(
@@ -1169,13 +1180,20 @@ export default function EnergySkyApp() {
       return alert('ERRO DE SEGURANÇA: A chave PIX deve ser o CPF cadastrado.');
     }
 
+    // Gera a chave única de idempotência para evitar saques duplicados
+    const idempotencyKey = crypto.randomUUID();
+
     try {
       const { data, error } = await supabase.functions.invoke('withdraw-misticpay-pix', {
+        headers: {
+          'X-Idempotency-Key': idempotencyKey,
+        },
         body: {
           userId: user.id,
           amount: amountToWithdraw,
           pixKey: cleanPix,
           pixKeyType: 'CPF',
+          idempotencyKey: idempotencyKey,
         },
       });
 
@@ -1199,6 +1217,7 @@ export default function EnergySkyApp() {
       alert('Erro ao processar saque: ' + (err.message || 'Tente novamente.'));
     }
   };
+
 
 const MyInvestments = () => {
   const [myAssets, setMyAssets] = useState([]);
