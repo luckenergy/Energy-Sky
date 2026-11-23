@@ -657,28 +657,30 @@ if (cleanCpf.length !== 11) {
     // Chave única para evitar depósitos duplicados
     const idempotencyKey = crypto.randomUUID();
 
-    const { data, error } = await supabase.functions.invoke(
-      'create-misticpay-pix',
-      {
-        headers: {
-          'X-Idempotency-Key': idempotencyKey,
-        },
-        body: {
-          amount,
-          payerName: user.full_name || 'Cliente',
-          payerDocument: cleanCpf,
-          transactionId: idempotencyKey,
-          description: 'Deposito PIX',
-        },
-      }
-    );
+const { data, error } = await supabase.functions.invoke(
+  'create-misticpay-pix',
+  {
+    headers: {
+      'X-Idempotency-Key': idempotencyKey,
+    },
+    body: {
+      amount,
+      payerName: user.full_name || 'Cliente',
+      payerDocument: cleanCpf,
+      transactionId: idempotencyKey,
+      description: 'Deposito PIX',
+    },
+  }
+);
 
-    if (error) {
-      const errorBody = await error.context?.json?.().catch(() => null);
-      throw new Error(
-        errorBody?.error || error.message || 'Erro ao criar PIX.'
-      );
-    }
+if (error) {
+  console.error('ERRO COMPLETO EDGE FUNCTION:', error);
+  console.error('CONTEXTO DO ERRO:', error.context);
+
+  throw new Error(
+    error.message || 'Falha na comunicação com a Edge Function.'
+  );
+}
 
     if (!data?.success) {
       throw new Error(data?.error || 'Não foi possível gerar o PIX.');
