@@ -1484,7 +1484,6 @@ const AssetTimer = ({ asset }) => {
   const Dashboard = () => (
     <div className="p-6 max-w-5xl mx-auto space-y-8">
 
-      ```jsx
       {/* CABEÇALHO SKYNET ENERGY */}
       <div className="relative overflow-hidden bg-gradient-to-r from-[#171717] via-[#111] to-[#1c1605] border border-yellow-500/30 rounded-3xl p-6 md:p-8">
         <div className="absolute -right-10 -top-10 w-48 h-48 bg-yellow-500/10 rounded-full blur-3xl" />
@@ -1510,7 +1509,6 @@ const AssetTimer = ({ asset }) => {
           </div>
         </div>
       </div>
-```
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="bg-[#111] p-6 rounded-3xl border border-[#222]"><p className="text-gray-500 text-sm">Saldo Disponível</p><h2 className="text-3xl font-bold text-white">R$ {user?.balance?.toFixed(2) || '0.00'}</h2></div>
         <div className="bg-[#111] p-6 rounded-3xl border border-[#222]"><p className="text-gray-500 text-sm">Total Sacado</p><h2 className="text-3xl font-bold text-white">R$ {user?.total_withdrawn?.toFixed(2) || '0.00'}</h2></div>
