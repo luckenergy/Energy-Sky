@@ -589,31 +589,51 @@ const WalletScreen = ({ user, setUser, handleWithdraw }) => {
     if (!confirmar) return;
 
     try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({
-          pixKey: cleanPix,
-          pix_key: cleanPix,
-        })
-        .eq('id', user.id);
+      // A gravação é feita pela função SECURITY DEFINER do banco.
+      // Assim, o navegador não precisa de permissão UPDATE em profiles.
+      const { data: result, error: rpcError } = await supabase.rpc(
+        'register_my_pix',
+        { p_pix_key: cleanPix }
+      );
 
-      if (error) throw error;
+      if (rpcError) throw rpcError;
+
+      if (result?.success !== true) {
+        throw new Error('O banco não confirmou o salvamento da chave PIX.');
+      }
+
+      // Confirma a persistência lendo novamente os campos do próprio perfil.
+      const { data: savedProfile, error: verifyError } = await supabase
+        .from('profiles')
+        .select('pix_key, pixKey')
+        .eq('id', user.id)
+        .single();
+
+      if (verifyError) throw verifyError;
+
+      const confirmedPix = String(
+        savedProfile?.pix_key || savedProfile?.pixKey || ''
+      ).replace(/\D/g, '');
+
+      if (confirmedPix !== cleanPix) {
+        throw new Error('A chave PIX não foi encontrada no perfil após a gravação.');
+      }
 
       setUser((prev) => ({
         ...prev,
-        pixKey: cleanPix,
-        pix_key: cleanPix,
+        pix_key: savedProfile.pix_key || cleanPix,
+        pixKey: savedProfile.pixKey || cleanPix,
       }));
 
-      setPixInput(cleanPix);
+      setPixInput(confirmedPix);
       setPixSaved(true);
 
       setTimeout(() => setPixSaved(false), 3000);
 
-      alert('Chave PIX salva com sucesso!');
+      alert('Chave PIX salva e confirmada no banco de dados!');
     } catch (error) {
       console.error('Erro ao salvar PIX:', error);
-      alert('Erro ao salvar chave PIX: ' + error.message);
+      alert('Erro ao salvar chave PIX: ' + (error.message || 'Tente novamente.'));
     }
   };
 // GERAR DEPÓSITO PIX - MISTICPay
