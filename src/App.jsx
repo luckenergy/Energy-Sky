@@ -1195,6 +1195,15 @@ const MyInvestments = () => {
   const [loadingAssets, setLoadingAssets] = useState(true);
   const [assetsError, setAssetsError] = useState("");
   const [claimingId, setClaimingId] = useState(null);
+  const [clockNow, setClockNow] = useState(Date.now());
+
+useEffect(() => {
+  const interval = setInterval(() => {
+    setClockNow(Date.now());
+  }, 1000);
+
+  return () => clearInterval(interval);
+}, []);
 
   const loadAssets = async () => {
     if (!user?.id) {
@@ -1258,81 +1267,95 @@ const MyInvestments = () => {
     }
   };
 
-  const AssetTimer = ({ asset }) => {
-    const [timeLeft, setTimeLeft] = useState({
-      h: 0,
-      m: 0,
-      s: 0,
-      percent: 100,
-      ready: false,
-    });
 
-    useEffect(() => {
-      const updateTimer = () => {
-        const lastClaim = asset.last_claim
-          ? new Date(asset.last_claim).getTime()
-          : asset.created_at
-            ? new Date(asset.created_at).getTime()
-            : Date.now();
+const AssetTimer = ({ asset }) => {
+  const [timeLeft, setTimeLeft] = useState({
+    h: 24,
+    m: 0,
+    s: 0,
+    percent: 100,
+    ready: false,
+  });
 
-        const nextClaim = lastClaim + 86400000;
-        const diff = Math.max(0, nextClaim - Date.now());
+  useEffect(() => {
+    const updateTimer = () => {
+      const lastClaim = asset.last_claim
+        ? new Date(asset.last_claim).getTime()
+        : new Date(asset.created_at).getTime();
 
-        setTimeLeft({
-          h: Math.floor(diff / 3600000),
-          m: Math.floor((diff % 3600000) / 60000),
-          s: Math.floor((diff % 60000) / 1000),
-          percent: (diff / 86400000) * 100,
-          ready: diff === 0,
-        });
-      };
+      const nextClaim = lastClaim + 86400000;
+      const diff = Math.max(0, nextClaim - Date.now());
 
-      updateTimer();
+      setTimeLeft({
+        h: Math.floor(diff / 3600000),
+        m: Math.floor((diff % 3600000) / 60000),
+        s: Math.floor((diff % 60000) / 1000),
+        percent: (diff / 86400000) * 100,
+        ready: diff === 0,
+      });
+    };
 
-      const interval = setInterval(updateTimer, 1000);
+    updateTimer();
 
-      return () => clearInterval(interval);
-    }, [asset.last_claim, asset.created_at]);
+    const interval = setInterval(updateTimer, 1000);
 
-    return (
-      <div className="flex flex-col items-center gap-2">
-        <div className="relative w-12 h-12">
-          <svg className="w-full h-full" viewBox="0 0 36 36">
-            <circle
-              cx="18"
-              cy="18"
-              r="16"
-              fill="none"
-              stroke="#222"
-              strokeWidth="3"
-            />
-            <circle
-              cx="18"
-              cy="18"
-              r="16"
-              fill="none"
-              stroke="#eab308"
-              strokeWidth="3"
-              strokeDasharray="100"
-              strokeDashoffset={100 - timeLeft.percent}
-              strokeLinecap="round"
-              className="transition-all duration-1000"
-            />
-          </svg>
+    return () => clearInterval(interval);
+  }, [asset.last_claim, asset.created_at]);
 
-          <div className="absolute inset-0 flex items-center justify-center text-[8px] font-bold">
-            {timeLeft.h}h
-          </div>
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 min-w-[110px]">
+
+      <div className="relative w-20 h-20">
+        <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36">
+          <circle
+            cx="18"
+            cy="18"
+            r="16"
+            fill="none"
+            stroke="#333"
+            strokeWidth="3"
+          />
+
+          <circle
+            cx="18"
+            cy="18"
+            r="16"
+            fill="none"
+            stroke="#eab308"
+            strokeWidth="3"
+            strokeDasharray="100"
+            strokeDashoffset={100 - timeLeft.percent}
+            strokeLinecap="round"
+            className="transition-all duration-1000"
+          />
+        </svg>
+
+        <div className="absolute inset-0 flex items-center justify-center text-sm font-bold text-yellow-500">
+          {timeLeft.ready ? "100%" : `${Math.ceil(timeLeft.percent)}%`}
         </div>
+      </div>
 
-        <p className="text-[10px] font-mono text-gray-400">
+      <div className="text-center">
+        <p className="text-[10px] text-gray-400 mb-1">
+          TEMPO RESTANTE
+        </p>
+
+        <p className="text-lg font-mono font-bold text-white tracking-wider">
           {timeLeft.ready
-            ? "Disponível"
-            : `${timeLeft.m}m ${timeLeft.s}s`}
+            ? "00:00:00"
+            : `${String(timeLeft.h).padStart(2, "0")}:${String(timeLeft.m).padStart(2, "0")}:${String(timeLeft.s).padStart(2, "0")}`}
+        </p>
+
+        <p className={`text-xs font-bold mt-1 ${
+          timeLeft.ready ? "text-green-400" : "text-yellow-500"
+        }`}>
+          {timeLeft.ready ? "DISPONÍVEL" : "AGUARDANDO"}
         </p>
       </div>
-    );
-  };
+    </div>
+  );
+};
+
 
   if (loadingAssets) {
     return (
@@ -1377,7 +1400,7 @@ const MyInvestments = () => {
                 : Date.now();
 
             const canClaim =
-              Date.now() >= lastClaim + 86400000;
+              clockNow >= lastClaim + 86400000;
 
             return (
               <div
@@ -1391,7 +1414,7 @@ const MyInvestments = () => {
                       FALLBACK_PLANS_IMAGES[asset.plans?.name] ||
                       "https://via.placeholder.com/400"
                     }
-                    className="w-16 h-16 rounded-2xl object-cover"
+                    className="w-24 h-24 rounded-2xl object-cover"
                     alt=""
                   />
 
