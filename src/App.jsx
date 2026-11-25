@@ -1513,7 +1513,7 @@ const MyInvestments = () => {
         <div className="bg-[#111] px-4 py-2 rounded-xl border border-[#222] text-white font-bold">Saldo: R$ {user?.balance?.toFixed(2)}</div>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {plans.map(plan => (
+        {[...plans].sort((a, b) => Number(a.price) - Number(b.price)).map(plan => (
           <div key={plan.id} className="bg-[#111] rounded-3xl border border-[#222] overflow-hidden group hover:border-yellow-500 transition-all">
             <div className="relative overflow-hidden">
               <img src={plan.img} className="w-full h-48 object-cover group-hover:scale-110 transition-transform duration-500" alt="" />
