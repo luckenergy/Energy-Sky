@@ -1642,7 +1642,7 @@ const MyInvestments = () => {
           target="_blank"
           rel="noopener noreferrer"
           title="Entre no nosso grupo"
-          className="fixed bottom-24 right-3 md:bottom-8 md:right-6 z-[90] flex items-center gap-2 bg-green-500 hover:bg-green-400 text-black font-bold text-sm px-3 py-2.5 rounded-full shadow-xl hover:scale-105 transition-all"
+          className="fixed bottom-24 right-3 md:bottom-8 md:right-6 z-[90] flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm px-3 py-2.5 rounded-full shadow-xl hover:scale-105 transition-all"
          >
           <Users className="w-5 h-5" />
           <span>GRUPO</span>
