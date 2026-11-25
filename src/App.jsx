@@ -617,6 +617,7 @@ const WalletScreen = ({ user, setUser, handleWithdraw }) => {
     }
   };
 // GERAR DEPÓSITO PIX - MISTICPay
+// O CPF e o nome são conferidos pela Edge Function no perfil autenticado.
 const handleDeposit = async () => {
   const amount = Number(depositAmount);
 
@@ -630,16 +631,12 @@ const handleDeposit = async () => {
     return;
   }
 
-const cleanCpf = String(
-  user?.cpf || savedPix || user?.pixKey || ''
-).replace(/\D/g, '');
-
-if (cleanCpf.length !== 11) {
-  setDepositError(
-    'Cadastre um CPF válido na sua conta antes de depositar.'
-  );
-  return;
-}
+  // Validação visual básica. A validação definitiva do CPF é feita no servidor.
+  const profileCpf = String(user?.cpf || '').replace(/\D/g, '');
+  if (profileCpf.length !== 11) {
+    setDepositError('Cadastre um CPF válido no seu perfil antes de depositar.');
+    return;
+  }
 
   setDepositLoading(true);
   setDepositError('');
@@ -654,33 +651,27 @@ if (cleanCpf.length !== 11) {
       throw new Error('Sua sessão expirou. Faça login novamente.');
     }
 
-    // Chave única para evitar depósitos duplicados
+    // Chave única para identificar esta solicitação de depósito
     const idempotencyKey = crypto.randomUUID();
 
-const { data, error } = await supabase.functions.invoke(
-  'create-misticpay-pix',
-  {
-    headers: {
-      'X-Idempotency-Key': idempotencyKey,
-    },
-    body: {
-      amount,
-      payerName: user.full_name || 'Cliente',
-      payerDocument: cleanCpf,
-      transactionId: idempotencyKey,
-      description: 'Deposito PIX',
-    },
-  }
-);
+    const { data, error } = await supabase.functions.invoke(
+      'create-misticpay-pix',
+      {
+        headers: {
+          'X-Idempotency-Key': idempotencyKey,
+        },
+        body: {
+          amount,
+          transactionId: idempotencyKey,
+          description: 'Deposito PIX',
+        },
+      }
+    );
 
-if (error) {
-  console.error('ERRO COMPLETO EDGE FUNCTION:', error);
-  console.error('CONTEXTO DO ERRO:', error.context);
-
-  throw new Error(
-    error.message || 'Falha na comunicação com a Edge Function.'
-  );
-}
+    if (error) {
+      console.error('Erro ao chamar create-misticpay-pix:', error);
+      throw new Error(error.message || 'Falha na comunicação com a função de depósito.');
+    }
 
     if (!data?.success) {
       throw new Error(data?.error || 'Não foi possível gerar o PIX.');
@@ -712,9 +703,7 @@ if (error) {
       throw new Error('A MisticPay não retornou os dados do PIX.');
     }
 
-    // A Edge Function deve salvar o depósito no banco.
-    // Não fazer INSERT novamente pelo frontend.
-
+    // A Edge Function salva a solicitação no banco; não inserir novamente aqui.
     setPixPayment({
       ...pixResult,
       transactionId: data.transactionId || pixResult.transactionId,
@@ -724,7 +713,6 @@ if (error) {
     });
 
     setDepositAmount('');
-
   } catch (error) {
     console.error('Erro ao gerar depósito PIX:', error);
     setDepositError(error.message || 'Erro ao gerar PIX.');
