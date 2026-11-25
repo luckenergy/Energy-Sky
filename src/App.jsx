@@ -1460,9 +1460,8 @@ const MyInvestments = () => {
 
   const Dashboard = () => (
     <div className="p-6 max-w-5xl mx-auto space-y-8">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="bg-[#111] p-6 rounded-3xl border border-[#222]"><p className="text-gray-500 text-sm">Saldo Disponível</p><h2 className="text-3xl font-bold text-white">R$ {user?.balance?.toFixed(2) || '0.00'}</h2></div>
-        <div className="bg-[#111] p-6 rounded-3xl border border-[#222]"><p className="text-gray-500 text-sm">Rendimentos Pendentes</p><h2 className="text-3xl font-bold text-yellow-500">R$ {user?.pending_earnings?.toFixed(4) || '0.0000'}</h2></div>
         <div className="bg-[#111] p-6 rounded-3xl border border-[#222]"><p className="text-gray-500 text-sm">Total Sacado</p><h2 className="text-3xl font-bold text-white">R$ {user?.total_withdrawn?.toFixed(2) || '0.00'}</h2></div>
       </div>
       <div className="bg-yellow-500 p-8 rounded-3xl text-black flex flex-col md:flex-row justify-between items-center gap-4">
