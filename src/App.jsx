@@ -751,8 +751,8 @@ const handleDeposit = async () => {
       return;
     }
 
-    if (!Number.isFinite(amount) || amount < 20) {
-      alert('O valor mínimo para saque é R$ 20,00.');
+    if (!Number.isFinite(amount) || amount < 10) {
+      alert('O valor mínimo para saque é R$ 10,00.');
       return;
     }
 
@@ -958,7 +958,7 @@ const handleDeposit = async () => {
           <div className="space-y-4">
             <div className="flex items-center justify-between gap-2">
               <label className="text-gray-400 text-sm font-medium">
-                Solicitar Saque (Mín. R$ 20,00)
+                Solicitar Saque (Mín. R$ 10,00)
               </label>
 
               <button
@@ -979,7 +979,7 @@ const handleDeposit = async () => {
               step="0.01"
               value={withdrawAmount}
               onChange={(e) => setWithdrawAmount(e.target.value)}
-              placeholder="R$ 20,00"
+              placeholder="R$ 10,00"
               disabled={withdrawLoading || !isPixLocked}
               className="w-full bg-[#1a1a1a] border border-[#333] p-3 rounded-xl text-white outline-none focus:border-yellow-500 disabled:opacity-50"
             />
