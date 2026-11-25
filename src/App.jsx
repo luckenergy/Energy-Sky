@@ -630,7 +630,7 @@ const WalletScreen = ({ user, setUser, handleWithdraw }) => {
 
       setTimeout(() => setPixSaved(false), 3000);
 
-      alert('Chave PIX salva e confirmada no banco de dados!');
+      alert('Chave PIX cadastrada com sucesso!');
     } catch (error) {
       console.error('Erro ao salvar PIX:', error);
       alert('Erro ao salvar chave PIX: ' + (error.message || 'Tente novamente.'));
