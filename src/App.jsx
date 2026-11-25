@@ -1405,9 +1405,9 @@ const AssetTimer = ({ asset }) => {
             return (
               <div
                 key={asset.id}
-                className="bg-[#111] p-5 rounded-3xl border border-[#222] flex items-center justify-between hover:border-yellow-500/50 transition-all"
+                className="bg-[#111] p-4 sm:p-5 rounded-3xl border border-[#222] flex flex-col sm:flex-row sm:items-center justify-between gap-5 hover:border-yellow-500/50 transition-all"
               >
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-3 w-full min-w-0">
                   <img
                     src={
                       asset.plans?.img ||
@@ -1434,7 +1434,7 @@ const AssetTimer = ({ asset }) => {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-6">
+                <div className="flex items-center justify-between sm:justify-end gap-4 w-full sm:w-auto">
                   <AssetTimer asset={asset} />
 
                   <button
