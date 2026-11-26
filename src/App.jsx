@@ -140,8 +140,8 @@ function ProfileScreen({ user, session }) {
             <p className="text-gray-500 text-sm">Dados da sua conta</p>
           </div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-[#1a1a1a] rounded-2xl p-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-stretch">
+          <div className="bg-[#1a1a1a] rounded-2xl p-4 min-h-[80px] flex flex-col justify-center">
             <p className="text-gray-500 text-xs mb-2">NOME COMPLETO</p>
             <p className="text-white font-semibold">{user?.full_name || 'Não informado'}</p>
           </div>
