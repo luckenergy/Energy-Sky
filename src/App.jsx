@@ -538,6 +538,46 @@ const WalletScreen = ({ user, setUser, handleWithdraw }) => {
   const [pixInput, setPixInput] = useState(user?.pixKey || user?.pix_key || '');
   const [pixSaved, setPixSaved] = useState(false);
 
+  // Resgate de cupons promocionais
+  const [promoCode, setPromoCode] = useState('');
+  const [redeemingPromo, setRedeemingPromo] = useState(false);
+
+  const handleRedeemPromo = async () => {
+    const code = String(promoCode || '').trim().toUpperCase();
+    if (!code) {
+      alert('Digite o código do cupom.');
+      return;
+    }
+    if (redeemingPromo) return;
+
+    setRedeemingPromo(true);
+    try {
+      const { data, error } = await supabase.rpc('redeem_promo_code', {
+        p_code: code
+      });
+      if (error) throw error;
+      if (!data?.success) {
+        throw new Error(data?.message || 'Não foi possível resgatar o cupom.');
+      }
+
+      const { data: updatedProfile, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+      if (profileError) throw profileError;
+
+      setUser(updatedProfile);
+      setPromoCode('');
+      alert(data.message || 'Cupom resgatado com sucesso!');
+    } catch (error) {
+      console.error('Erro ao resgatar cupom:', error);
+      alert('Erro ao resgatar cupom: ' + (error.message || 'Tente novamente.'));
+    } finally {
+      setRedeemingPromo(false);
+    }
+  };
+
   // Estados de depósito
   const [depositAmount, setDepositAmount] = useState('');
   const [depositLoading, setDepositLoading] = useState(false);
@@ -802,13 +842,49 @@ const handleDeposit = async () => {
             </h2>
           </div>
 
-          <div className="bg-[#1a1a1a] px-4 py-2 rounded-2xl border border-[#333]">
-            <p className="text-xs text-gray-500">
-              Saldo Disponível
+          <div className="flex flex-col sm:flex-row gap-2">
+            <div className="bg-[#1a1a1a] px-4 py-2 rounded-2xl border border-[#333]">
+              <p className="text-xs text-gray-500">Saldo Real Disponível</p>
+              <p className="text-xl font-black text-yellow-500">
+                R$ {formatMoney(user?.balance)}
+              </p>
+            </div>
+            <div className="bg-[#1a1a1a] px-4 py-2 rounded-2xl border border-purple-500/30">
+              <p className="text-xs text-gray-500">Saldo Promocional</p>
+              <p className="text-xl font-black text-purple-400">
+                R$ {formatMoney(user?.promo_balance)}
+              </p>
+              <p className="text-[10px] text-gray-500">Somente para comprar planos</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Resgate de cupom promocional */}
+        <div className="space-y-3 border-b border-[#222] pb-6">
+          <div>
+            <h3 className="text-white font-bold">Resgatar cupom</h3>
+            <p className="text-gray-500 text-xs mt-1">
+              Digite seu código para receber crédito promocional ou um plano.
             </p>
-            <p className="text-xl font-black text-yellow-500">
-              R$ {formatMoney(user?.balance)}
-            </p>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input
+              type="text"
+              value={promoCode}
+              onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
+              placeholder="Digite seu código"
+              maxLength={40}
+              disabled={redeemingPromo}
+              className="flex-1 min-w-0 bg-[#1a1a1a] border border-[#333] p-3 rounded-xl text-white uppercase outline-none focus:border-purple-500"
+            />
+            <button
+              type="button"
+              onClick={handleRedeemPromo}
+              disabled={redeemingPromo || !promoCode.trim()}
+              className="bg-purple-600 hover:bg-purple-500 text-white px-5 py-3 rounded-xl font-bold disabled:opacity-50"
+            >
+              {redeemingPromo ? 'Resgatando...' : 'Resgatar cupom'}
+            </button>
           </div>
         </div>
 
@@ -1130,9 +1206,10 @@ export default function EnergySkyApp() {
 
   const handleBuy = (plan) => setSelectedPlan(plan);
 
+  // Compra com saldo real: mantém a função e as comissões atuais.
   const confirmBuy = async () => {
     if (!selectedPlan || buying) return;
-    if (Number(user?.balance || 0) < Number(selectedPlan.price)) return alert('Saldo insuficiente!');
+    if (Number(user?.balance || 0) < Number(selectedPlan.price)) return alert('Saldo real insuficiente!');
     setBuying(true);
     try {
       const { error } = await supabase.rpc('buy_plan', { user_id: user.id, plan_id: selectedPlan.id });
@@ -1142,6 +1219,30 @@ export default function EnergySkyApp() {
       setPage('my-investments');
       alert('Compra realizada com sucesso!');
     } catch (e) { alert('Erro na compra: ' + e.message); } finally { setBuying(false); }
+  };
+
+  // Compra exclusivamente com saldo promocional: não mistura carteiras.
+  const confirmPromoBuy = async () => {
+    if (!selectedPlan || buying) return;
+    if (Number(user?.promo_balance || 0) < Number(selectedPlan.price)) {
+      return alert('Saldo promocional insuficiente!');
+    }
+    setBuying(true);
+    try {
+      const { error } = await supabase.rpc('buy_plan_with_promo_balance', {
+        p_user_id: user.id,
+        p_plan_id: selectedPlan.id
+      });
+      if (error) throw error;
+      await fetchUserProfile(user.id);
+      setSelectedPlan(null);
+      setPage('my-investments');
+      alert('Plano comprado com saldo promocional!');
+    } catch (e) {
+      alert('Erro na compra promocional: ' + e.message);
+    } finally {
+      setBuying(false);
+    }
   };
 
   const handleWithdraw = async (requestedAmount) => {
@@ -1559,7 +1660,14 @@ const AssetTimer = ({ asset }) => {
     <div className="p-6 max-w-6xl mx-auto">
       <div className="flex justify-between items-center mb-8">
         <h2 className="text-3xl font-bold text-white">Catálogo de <span className="text-yellow-500">Ativos</span></h2>
-        <div className="bg-[#111] px-4 py-2 rounded-xl border border-[#222] text-white font-bold">Saldo: R$ {user?.balance?.toFixed(2)}</div>
+        <div className="flex flex-col sm:flex-row gap-2">
+          <div className="bg-[#111] px-4 py-2 rounded-xl border border-[#222] text-yellow-500 font-bold">
+            Real: R$ {Number(user?.balance || 0).toFixed(2)}
+          </div>
+          <div className="bg-[#111] px-4 py-2 rounded-xl border border-purple-500/30 text-purple-400 font-bold">
+            Bônus: R$ {Number(user?.promo_balance || 0).toFixed(2)}
+          </div>
+        </div>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {[...plans].sort((a, b) => Number(a.price) - Number(b.price)).map(plan => (
@@ -1588,40 +1696,397 @@ const AssetTimer = ({ asset }) => {
   const AdminScreen = () => {
     const [adminPlans, setAdminPlans] = useState([]);
     const [totalInvested, setTotalInvested] = useState(0);
+    const [promoCodes, setPromoCodes] = useState([]);
+    const [promoRedemptions, setPromoRedemptions] = useState([]);
+    const [adminLoading, setAdminLoading] = useState(true);
+    const [promoLoading, setPromoLoading] = useState(false);
+    const [promoError, setPromoError] = useState('');
+    const [newCode, setNewCode] = useState('');
+    const [benefitType, setBenefitType] = useState('credit');
+    const [creditAmount, setCreditAmount] = useState('');
+    const [selectedCouponPlan, setSelectedCouponPlan] = useState('');
+    const [maxUses, setMaxUses] = useState('');
+    const [startsAt, setStartsAt] = useState('');
+    const [expiresAt, setExpiresAt] = useState('');
+    const [creatingCode, setCreatingCode] = useState(false);
+
+    const loadPromoAdmin = async () => {
+      setPromoLoading(true);
+      setPromoError('');
+      try {
+        const [codesRes, redemptionsRes] = await Promise.all([
+          supabase.rpc('admin_list_promo_codes'),
+          supabase.rpc('admin_list_promo_redemptions', { p_code_id: null })
+        ]);
+        if (codesRes.error) throw codesRes.error;
+        if (redemptionsRes.error) throw redemptionsRes.error;
+        setPromoCodes(codesRes.data || []);
+        setPromoRedemptions(redemptionsRes.data || []);
+      } catch (error) {
+        console.error('Erro ao carregar cupons:', error);
+        setPromoError(error.message || 'Não foi possível carregar os cupons.');
+      } finally {
+        setPromoLoading(false);
+      }
+    };
+
     useEffect(() => {
       async function loadAdminData() {
-        const { data: plansData } = await supabase.from('plans').select('*');
-        setAdminPlans(plansData || []);
+        setAdminLoading(true);
+        const { data: plansData, error: plansError } = await supabase.from('plans').select('*').order('id');
+        if (!plansError) setAdminPlans(plansData || []);
         const { data: invData } = await supabase.from('investments').select('plans(price)');
         setTotalInvested(invData?.reduce((acc, curr) => acc + Number(curr.plans?.price || 0), 0) || 0);
+        setAdminLoading(false);
       }
       loadAdminData();
+      loadPromoAdmin();
     }, []);
+
     const updatePlan = async (id, field, value) => {
-      await supabase.from('plans').update({ [field]: value }).eq('id', id);
-      await supabase.from('plans').select('*').then(res => setAdminPlans(res.data || []));
+      const { error } = await supabase.from('plans').update({ [field]: value }).eq('id', id);
+      if (error) {
+        alert('Erro ao atualizar plano: ' + error.message);
+        return;
+      }
+      const { data } = await supabase.from('plans').select('*').order('id');
+      setAdminPlans(data || []);
+      await fetchUserProfile(user.id);
     };
+
+    const createPromoCode = async (e) => {
+      e.preventDefault();
+      if (creatingCode) return;
+      const normalizedCode = newCode.trim().toUpperCase();
+      if (!normalizedCode) return alert('Digite o código do cupom.');
+      if (benefitType === 'credit' && Number(creditAmount) <= 0) {
+        return alert('Informe um valor de crédito promocional maior que zero.');
+      }
+      if (benefitType === 'plan' && !selectedCouponPlan) {
+        return alert('Selecione o plano que será concedido.');
+      }
+
+      setCreatingCode(true);
+      try {
+        const { error } = await supabase.rpc('admin_create_promo_code', {
+          p_code: normalizedCode,
+          p_benefit_type: benefitType,
+          p_credit_amount: benefitType === 'credit' ? Number(creditAmount) : null,
+          p_plan_id: benefitType === 'plan' ? Number(selectedCouponPlan) : null,
+          p_max_uses: maxUses.trim() ? Number(maxUses) : null,
+          p_starts_at: startsAt ? new Date(startsAt).toISOString() : new Date().toISOString(),
+          p_expires_at: expiresAt ? new Date(expiresAt).toISOString() : null
+        });
+        if (error) throw error;
+        setNewCode('');
+        setCreditAmount('');
+        setSelectedCouponPlan('');
+        setMaxUses('');
+        setStartsAt('');
+        setExpiresAt('');
+        await loadPromoAdmin();
+        alert('Cupom criado com sucesso!');
+      } catch (error) {
+        console.error('Erro ao criar cupom:', error);
+        alert('Erro ao criar cupom: ' + error.message);
+      } finally {
+        setCreatingCode(false);
+      }
+    };
+
+    const togglePromoCode = async (coupon) => {
+      const { error } = await supabase.rpc('admin_set_promo_code_status', {
+        p_code_id: coupon.id,
+        p_is_active: !coupon.is_active
+      });
+      if (error) {
+        alert('Erro ao alterar cupom: ' + error.message);
+        return;
+      }
+      await loadPromoAdmin();
+    };
+
+    const updatePromoLimits = async (coupon) => {
+      const enteredLimit = window.prompt(
+        'Novo limite total de resgates (deixe vazio para ilimitado):',
+        coupon.max_uses == null ? '' : String(coupon.max_uses)
+      );
+      if (enteredLimit === null) return;
+      const parsedLimit = enteredLimit.trim() === '' ? null : Number(enteredLimit);
+      if (parsedLimit !== null && (!Number.isInteger(parsedLimit) || parsedLimit < Number(coupon.uses_count || 0))) {
+        return alert('O limite deve ser um número inteiro maior ou igual à quantidade já utilizada.');
+      }
+
+      const { error } = await supabase.rpc('admin_update_promo_code', {
+        p_code_id: coupon.id,
+        p_max_uses: parsedLimit,
+        p_starts_at: coupon.starts_at,
+        p_expires_at: coupon.expires_at,
+        p_is_active: coupon.is_active
+      });
+      if (error) {
+        alert('Erro ao atualizar limite: ' + error.message);
+        return;
+      }
+      await loadPromoAdmin();
+    };
+
+    const money = (value) => Number(value || 0).toLocaleString('pt-BR', {
+      style: 'currency',
+      currency: 'BRL'
+    });
+
     return (
-      <div className="p-6 max-w-6xl mx-auto space-y-8">
+      <div className="p-6 max-w-6xl mx-auto space-y-8 pb-32">
         <h2 className="text-3xl font-bold text-white">Painel <span className="text-yellow-500">Administrador</span></h2>
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="bg-[#111] p-6 rounded-3xl border border-[#222]"><p className="text-gray-500 text-sm">Total Investido</p><h3 className="text-4xl font-black text-white">R$ {totalInvested.toFixed(2)}</h3></div>
-          <div className="bg-[#111] p-6 rounded-3xl border border-[#222]"><p className="text-gray-500 text-sm">Status</p><h3 className="text-4xl font-black text-green-500">Operacional</h3></div>
+          <div className="bg-[#111] p-6 rounded-3xl border border-[#222]">
+            <p className="text-gray-500 text-sm">Total Investido</p>
+            <h3 className="text-4xl font-black text-white">{money(totalInvested)}</h3>
+          </div>
+          <div className="bg-[#111] p-6 rounded-3xl border border-[#222]">
+            <p className="text-gray-500 text-sm">Status</p>
+            <h3 className="text-4xl font-black text-green-500">Operacional</h3>
+          </div>
         </div>
-        <div className="bg-[#111] rounded-3xl border border-[#222] overflow-hidden">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-[#1a1a1a] text-gray-400"><tr><th className="p-4">Ativo</th><th className="p-4">Preço</th><th className="p-4">Rendimento</th></tr></thead>
-            <tbody>
-              {adminPlans.map(plan => (
-                <tr key={plan.id} className="border-t border-[#222]">
-                  <td className="p-4 text-white">{plan.name}</td>
-                  <td className="p-4"><input className="bg-black border border-gray-700 p-1 rounded text-white w-20" value={plan.price} onChange={(e) => updatePlan(plan.id, 'price', Number(e.target.value))} /></td>
-                  <td className="p-4"><input className="bg-black border border-gray-700 p-1 rounded text-white w-20" value={plan.yield} onChange={(e) => updatePlan(plan.id, 'yield', Number(e.target.value))} /></td>
-                </tr>
+
+        <section className="bg-[#111] rounded-3xl border border-[#222] p-5 md:p-6 space-y-5">
+          <div>
+            <h3 className="text-xl font-bold text-white">Criar cupom promocional</h3>
+            <p className="text-gray-500 text-sm mt-1">O benefício pode ser crédito promocional ou um plano escolhido.</p>
+          </div>
+
+          <form onSubmit={createPromoCode} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <label className="text-gray-400 text-sm space-y-2">
+              Código
+              <input
+                value={newCode}
+                onChange={(e) => setNewCode(e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, ''))}
+                minLength={4}
+                maxLength={40}
+                required
+                placeholder="EXEMPLO-2026"
+                className="w-full bg-[#1a1a1a] border border-[#333] p-3 rounded-xl text-white uppercase"
+              />
+            </label>
+
+            <label className="text-gray-400 text-sm space-y-2">
+              Tipo de benefício
+              <select
+                value={benefitType}
+                onChange={(e) => setBenefitType(e.target.value)}
+                className="w-full bg-[#1a1a1a] border border-[#333] p-3 rounded-xl text-white"
+              >
+                <option value="credit">Crédito promocional</option>
+                <option value="plan">Conceder um plano</option>
+              </select>
+            </label>
+
+            {benefitType === 'credit' ? (
+              <label className="text-gray-400 text-sm space-y-2">
+                Valor do crédito (R$)
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={creditAmount}
+                  onChange={(e) => setCreditAmount(e.target.value)}
+                  required
+                  className="w-full bg-[#1a1a1a] border border-[#333] p-3 rounded-xl text-white"
+                />
+              </label>
+            ) : (
+              <label className="text-gray-400 text-sm space-y-2">
+                Plano concedido
+                <select
+                  value={selectedCouponPlan}
+                  onChange={(e) => setSelectedCouponPlan(e.target.value)}
+                  required
+                  className="w-full bg-[#1a1a1a] border border-[#333] p-3 rounded-xl text-white"
+                >
+                  <option value="">Selecione um plano</option>
+                  {adminPlans.map((plan) => (
+                    <option key={plan.id} value={plan.id}>{plan.name} — {money(plan.price)}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+
+            <label className="text-gray-400 text-sm space-y-2">
+              Limite de usos (vazio = ilimitado)
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={maxUses}
+                onChange={(e) => setMaxUses(e.target.value)}
+                placeholder="Ilimitado"
+                className="w-full bg-[#1a1a1a] border border-[#333] p-3 rounded-xl text-white"
+              />
+            </label>
+
+            <label className="text-gray-400 text-sm space-y-2">
+              Início da validade
+              <input
+                type="datetime-local"
+                value={startsAt}
+                onChange={(e) => setStartsAt(e.target.value)}
+                className="w-full bg-[#1a1a1a] border border-[#333] p-3 rounded-xl text-white"
+              />
+            </label>
+
+            <label className="text-gray-400 text-sm space-y-2">
+              Fim da validade (opcional)
+              <input
+                type="datetime-local"
+                value={expiresAt}
+                onChange={(e) => setExpiresAt(e.target.value)}
+                className="w-full bg-[#1a1a1a] border border-[#333] p-3 rounded-xl text-white"
+              />
+            </label>
+
+            <div className="md:col-span-2">
+              <button
+                type="submit"
+                disabled={creatingCode}
+                className="w-full md:w-auto bg-purple-600 hover:bg-purple-500 text-white font-bold px-6 py-3 rounded-xl disabled:opacity-50"
+              >
+                {creatingCode ? 'Criando...' : 'Criar cupom'}
+              </button>
+            </div>
+          </form>
+        </section>
+
+        <section className="bg-[#111] rounded-3xl border border-[#222] p-5 md:p-6 space-y-4">
+          <div className="flex flex-wrap justify-between items-center gap-3">
+            <div>
+              <h3 className="text-xl font-bold text-white">Cupons cadastrados</h3>
+              <p className="text-gray-500 text-xs mt-1">Ative, desative e ajuste o limite de resgates.</p>
+            </div>
+            <button onClick={loadPromoAdmin} disabled={promoLoading} className="bg-[#222] text-white px-4 py-2 rounded-xl font-bold disabled:opacity-50">
+              {promoLoading ? 'Atualizando...' : 'Atualizar lista'}
+            </button>
+          </div>
+
+          {promoError && <p className="text-red-400 text-sm">{promoError}</p>}
+          {promoLoading ? (
+            <div className="text-gray-400 py-6">Carregando cupons...</div>
+          ) : promoCodes.length === 0 ? (
+            <div className="text-gray-500 py-6">Nenhum cupom cadastrado.</div>
+          ) : (
+            <div className="space-y-3">
+              {promoCodes.map((coupon) => (
+                <div key={coupon.id} className="bg-[#1a1a1a] border border-[#333] rounded-2xl p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-white font-black tracking-wide break-all">{coupon.code}</p>
+                    <p className="text-gray-400 text-xs mt-1">
+                      {coupon.benefit_type === 'credit' ? `Crédito: ${money(coupon.credit_amount)}` : `Plano ID: ${coupon.plan_id}`}
+                      {' · '}Usos: {coupon.uses_count || 0}/{coupon.max_uses == null ? 'Ilimitado' : coupon.max_uses}
+                    </p>
+                    <p className="text-gray-500 text-xs mt-1">
+                      Início: {coupon.starts_at ? new Date(coupon.starts_at).toLocaleString('pt-BR') : '—'}
+                      {' · '}Expira: {coupon.expires_at ? new Date(coupon.expires_at).toLocaleString('pt-BR') : 'Sem expiração'}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <span className={`px-3 py-2 rounded-lg text-xs font-bold ${coupon.is_active ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
+                      {coupon.is_active ? 'ATIVO' : 'INATIVO'}
+                    </span>
+                    <button onClick={() => togglePromoCode(coupon)} className="bg-[#333] text-white px-3 py-2 rounded-lg text-xs font-bold">
+                      {coupon.is_active ? 'Desativar' : 'Ativar'}
+                    </button>
+                    <button onClick={() => updatePromoLimits(coupon)} className="bg-purple-600 text-white px-3 py-2 rounded-lg text-xs font-bold">
+                      Editar limite
+                    </button>
+                  </div>
+                </div>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </div>
+          )}
+        </section>
+
+        <section className="bg-[#111] rounded-3xl border border-[#222] p-5 md:p-6 space-y-4">
+          <h3 className="text-xl font-bold text-white">Histórico de resgates</h3>
+          {promoRedemptions.length === 0 ? (
+            <p className="text-gray-500 text-sm">Nenhum resgate registrado.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs min-w-[650px]">
+                <thead className="text-gray-400 bg-[#1a1a1a]">
+                  <tr>
+                    <th className="p-3">Cupom</th>
+                    <th className="p-3">Usuário (ID)</th>
+                    <th className="p-3">Benefício</th>
+                    <th className="p-3">Data</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {promoRedemptions.map((item) => (
+                    <tr key={item.redemption_id} className="border-t border-[#222]">
+                      <td className="p-3 text-white font-bold">{item.code}</td>
+                      <td className="p-3 text-gray-400">{item.user_id}</td>
+                      <td className="p-3 text-purple-300">
+                        {item.benefit_type === 'credit' ? money(item.credit_amount) : `Plano ${item.plan_id}`}
+                      </td>
+                      <td className="p-3 text-gray-400">{item.redeemed_at ? new Date(item.redeemed_at).toLocaleString('pt-BR') : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+
+        <section className="bg-[#111] rounded-3xl border border-[#222] overflow-hidden">
+          <div className="p-5 border-b border-[#222]">
+            <h3 className="text-xl font-bold text-white">Gerenciar preços e rendimentos dos planos</h3>
+          </div>
+          {adminLoading ? (
+            <div className="p-8 text-gray-400">Carregando planos...</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm min-w-[520px]">
+                <thead className="bg-[#1a1a1a] text-gray-400">
+                  <tr><th className="p-4">Ativo</th><th className="p-4">Preço</th><th className="p-4">Rendimento</th></tr>
+                </thead>
+                <tbody>
+                  {adminPlans.map((plan) => (
+                    <tr key={plan.id} className="border-t border-[#222]">
+                      <td className="p-4 text-white">{plan.name}</td>
+                      <td className="p-4">
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          className="bg-black border border-gray-700 p-2 rounded text-white w-28"
+                          defaultValue={plan.price}
+                          onBlur={(e) => {
+                            const value = Number(e.target.value);
+                            if (Number.isFinite(value) && value !== Number(plan.price)) updatePlan(plan.id, 'price', value);
+                          }}
+                        />
+                      </td>
+                      <td className="p-4">
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          className="bg-black border border-gray-700 p-2 rounded text-white w-28"
+                          defaultValue={plan.yield}
+                          onBlur={(e) => {
+                            const value = Number(e.target.value);
+                            if (Number.isFinite(value) && value !== Number(plan.yield)) updatePlan(plan.id, 'yield', value);
+                          }}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
       </div>
     );
   };
@@ -1645,7 +2110,9 @@ const AssetTimer = ({ asset }) => {
          onClick={() => setPage('referrals')}
          />
 
-        {user?.isAdmin && <NavItem icon={<Settings />} label="Admin" active={page === 'admin'} onClick={() => setPage('admin')} />}
+        {(user?.role === 'admin' || user?.isAdmin) && (
+          <NavItem icon={<Settings />} label="Admin" active={page === 'admin'} onClick={() => setPage('admin')} />
+        )}
         <button onClick={handleLogout} className="flex items-center gap-3 text-red-500 font-bold p-3 rounded-2xl hover:bg-red-500/10 transition-all">
           <LogOut className="w-6 h-6" /> <span className="hidden md:inline">Sair</span>
         </button>
@@ -1662,8 +2129,21 @@ const AssetTimer = ({ asset }) => {
               <div className="flex justify-between"><span className="text-gray-500">Valor</span><strong className="text-yellow-500">R$ {Number(selectedPlan.price).toFixed(2)}</strong></div>
             </div>
             <div className="flex flex-col gap-3">
-              <button onClick={confirmBuy} disabled={buying} className="w-full bg-yellow-500 hover:bg-yellow-400 text-black font-black py-4 rounded-xl transition-all">{buying ? 'Processando...' : 'CONFIRMAR COMPRA'}</button>
-              <button onClick={() => setSelectedPlan(null)} className="w-full bg-[#222] text-white font-bold py-4 rounded-xl">CANCELAR</button>
+              <button
+                onClick={confirmBuy}
+                disabled={buying || Number(user?.balance || 0) < Number(selectedPlan.price || 0)}
+                className="w-full bg-yellow-500 hover:bg-yellow-400 text-black font-black py-4 rounded-xl transition-all disabled:opacity-40"
+              >
+                {buying ? 'Processando...' : 'COMPRAR COM SALDO REAL'}
+              </button>
+              <button
+                onClick={confirmPromoBuy}
+                disabled={buying || Number(user?.promo_balance || 0) < Number(selectedPlan.price || 0)}
+                className="w-full bg-purple-600 hover:bg-purple-500 text-white font-black py-4 rounded-xl transition-all disabled:opacity-40"
+              >
+                {buying ? 'Processando...' : 'COMPRAR COM BÔNUS'}
+              </button>
+              <button onClick={() => setSelectedPlan(null)} disabled={buying} className="w-full bg-[#222] text-white font-bold py-4 rounded-xl disabled:opacity-50">CANCELAR</button>
             </div>
           </div>
         </div>
