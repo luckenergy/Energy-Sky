@@ -1566,7 +1566,7 @@ const AssetTimer = ({ asset }) => {
           <div key={plan.id} className="bg-[#111] rounded-3xl border border-[#222] overflow-hidden group hover:border-yellow-500 transition-all">
             <div className="relative overflow-hidden">
               <img src={plan.img} className="w-full h-48 object-cover group-hover:scale-110 transition-transform duration-500" alt="" />
-              <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-md px-3 py-1 rounded-full text-xs font-bold text-yellow-500 border border-yellow-500/30">Ativo Ativo</div>
+              <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-md px-3 py-1 rounded-full text-xs font-bold text-yellow-500 border border-yellow-500/30">Ativo</div>
             </div>
             <div className="p-6 space-y-4">
               <h3 className="text-xl font-bold text-white">{plan.name}</h3>
